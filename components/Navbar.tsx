@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { buttonVariants } from './ui/button'
+import { dashboardLinks } from '@/constants/dashboard'
 
 function Navbar() {
     return (
@@ -14,20 +15,6 @@ function Navbar() {
     )
 }
 
-const items = [
-    {
-        label: 'Dashboard',
-        link: '/',
-    },
-    {
-        label: 'Transactions',
-        link: '/transactions',
-    },
-    {
-        label: 'Manage',
-        link: '/manage',
-    },
-]
 
 function DesktopNavbar() {
     return (
@@ -36,7 +23,7 @@ function DesktopNavbar() {
                 <div className="flex h-[80px] min-h-[60px] items-center gap-x-4">
                     <Logo />
                     <div className="flex h-full items-center">
-                        {items.map((item) => (
+                        {dashboardLinks.map((item) => (
                             <NavbarItem key={item.label} label={item.label} link={item.link} />
                         ))}
                     </div>
