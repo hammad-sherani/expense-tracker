@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ClerkProvider } from '@clerk/nextjs'
-import { Root } from "react-day-picker";
 import RootProviders from "@/components/providers/RootProviders";
 
 const geistSans = Geist({
