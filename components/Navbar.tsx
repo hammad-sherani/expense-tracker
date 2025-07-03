@@ -1,6 +1,6 @@
 'use client'
 import React, { useState } from 'react'
-import Logo from './Logo'
+import Logo, { LogoMobile } from './Logo'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
@@ -32,14 +32,12 @@ function DesktopNavbar() {
                             <NavbarItem key={item.label} label={item.label} link={item.link} />
                         ))}
                     </div>
-
                 </div>
                 <div className="flex items-center gap-2">
                     <ThemeSwitcherBtn />
                     <UserButton afterSignOutUrl="/sign-in" />
                 </div>
             </nav>
-
         </div>
     )
 }
@@ -60,27 +58,29 @@ function MobileNavbar() {
                         <Logo />
                         <div className="flex flex-col gap-1 pt-4">
                             {dashboardLinks.map((item) => (
-                                <NavbarItem key={item.label} label={item.label} link={item.link} />
+                                <NavbarItem
+                                    key={item.label}
+                                    label={item.label}
+                                    link={item.link}
+                                    onClick={() => setIsOpen(false)} />
                             ))}
                         </div>
                     </SheetContent>
                 </Sheet>
                 <div className="flex h-[80px] min-h-[60px] items-center gap-x-4">
-                    <Logo />
+                    <LogoMobile />
                 </div>
-
-                {/* 
                 <div className="flex items-center gap-2">
                     <ThemeSwitcherBtn />
                     <UserButton afterSignOutUrl="/sign-in" />
-                </div> */}
+                </div>
             </nav>
         </div>
     )
 }
 
 
-function NavbarItem({ label, link }: { label: string; link: string }) {
+function NavbarItem({ label, link, onClick }: { label: string; link: string; onClick?: () => void }) {
     const pathName = usePathname();
     const isActive = pathName === link;
     return (
@@ -89,7 +89,9 @@ function NavbarItem({ label, link }: { label: string; link: string }) {
                 buttonVariants({ variant: 'ghost' }),
                 "w-full justify-start text-lg text-muted-foreground hover:text-foreground",
                 isActive && "text-foreground font-semibold",
-            )} >
+            )}
+                onClick={onClick}
+            >
                 {label}
             </Link>
 
