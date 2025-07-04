@@ -24,8 +24,31 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
+  // Handle missing publishable key during build
+  if (!publishableKey) {
+    console.warn("Missing NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY. Clerk will not be available.");
+    
+    return (
+      <html lang="en" className="dark" style={{ colorScheme: "dark" }}>
+        <body
+          className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        >
+          <RootProviders>
+            {children}
+          </RootProviders>
+        </body>
+      </html>
+    );
+  }
+
   return (
-    <ClerkProvider>
+    <ClerkProvider 
+      publishableKey={publishableKey}
+      afterSignInUrl="/dashboard"
+      afterSignUpUrl="/dashboard"
+    >
       <html lang="en" className="dark" style={{ colorScheme: "dark" }}>
         <body
           className={`${geistSans.variable} ${geistMono.variable} antialiased`}
