@@ -17,8 +17,6 @@ function RootProviders({
             {children}
         </ThemeProvider>
     )
-
-
 }
 
 export default RootProviders;
