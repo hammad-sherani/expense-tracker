@@ -1,6 +1,6 @@
 export const dashboardLinks = [
     {
-        label: 'Dashboard',
+        label: 'Dash',
         link: '/',
     },
     {
