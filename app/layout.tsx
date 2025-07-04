@@ -46,8 +46,8 @@ export default function RootLayout({
   return (
     <ClerkProvider 
       publishableKey={publishableKey}
-      afterSignInUrl="/dashboard"
-      afterSignUpUrl="/dashboard"
+      afterSignInUrl="/"
+      afterSignUpUrl="/"
     >
       <html lang="en" className="dark" style={{ colorScheme: "dark" }}>
         <body
