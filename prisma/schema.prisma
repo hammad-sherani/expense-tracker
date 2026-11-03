@@ -1,0 +1,53 @@
+// Prisma schema for the Personal Expense Tracker (MongoDB).
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum Category {
+  FOOD
+  TRANSPORT
+  SHOPPING
+  BILLS_UTILITIES
+  RENT
+  HEALTHCARE
+  ENTERTAINMENT
+  EDUCATION
+  GROCERIES
+  TRAVEL
+  OTHER
+}
+
+enum PaymentMethod {
+  CASH
+  DEBIT_CARD
+  CREDIT_CARD
+  BANK_TRANSFER
+  MOBILE_WALLET
+  OTHER
+}
+
+model Expense {
+  id            String         @id @default(auto()) @map("_id") @db.ObjectId
+  /// Amount in PKR, stored with at most 2 decimal places.
+  amount        Float
+  description   String
+  /// Calendar date of the expense, stored as 00:00:00.000 UTC of that day.
+  /// This keeps the calendar day stable regardless of server/browser timezone.
+  date          DateTime
+  category      Category
+  paymentMethod PaymentMethod?
+  notes         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([date])
+  @@index([category, date])
+  @@map("expenses")
+}
