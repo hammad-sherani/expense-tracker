@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { AddExpenseForm } from "@/components/expenses/add-expense-form";
+import { requireUser } from "@/lib/auth/dal";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,6 +27,7 @@ export default function NewExpensePage() {
 /** The form defaults to *today*, so it must render at request time, not build time. */
 async function DynamicForm() {
   await connection();
+  await requireUser();
   return <AddExpenseForm />;
 }
 

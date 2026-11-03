@@ -11,6 +11,7 @@ import { ExportButton } from "@/components/expenses/export-button";
 import { PeriodPicker } from "@/components/period/period-picker";
 import { PageHeader } from "@/components/shared/page-header";
 import { PendingContent } from "@/components/shared/navigation-transition";
+import { requireUser } from "@/lib/auth/dal";
 import { currentYearMonth, parsePeriod, periodToParam } from "@/lib/dates";
 import { formatCurrency } from "@/lib/format";
 import { getDashboardData } from "@/server/queries/dashboard";
@@ -26,10 +27,11 @@ export default function DashboardPage({ searchParams }: PageProps<"/">) {
 async function Dashboard({ searchParams }: { searchParams: PageProps<"/">["searchParams"] }) {
   // Figures depend on "today", so always render at request time.
   await connection();
+  const user = await requireUser();
   const sp = await searchParams;
   const period = parsePeriod(sp.period);
   const periodParam = periodToParam(period);
-  const data = await getDashboardData(period);
+  const data = await getDashboardData(user.id, period);
   const headline = data.cards[0];
 
   return (

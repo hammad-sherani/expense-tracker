@@ -31,10 +31,12 @@ function escapeRegex(value: string) {
 }
 
 function listWhere(
+  userId: string,
   period: Period,
   params: Pick<ExpenseListParams, "q" | "category">,
 ): Prisma.ExpenseWhereInput {
   return {
+    userId,
     ...periodWhere(period),
     ...(params.category ? { category: params.category } : {}),
     // Prisma's MongoDB connector turns `contains` into a $regex without escaping,
@@ -58,11 +60,12 @@ function orderBy(sort: SortValue): Prisma.ExpenseOrderByWithRelationInput[] {
 }
 
 export async function listExpenses(
+  userId: string,
   period: Period,
   params: ExpenseListParams,
 ): Promise<ExpenseListResult> {
-  const where = listWhere(period, params);
-  const baseWhere = periodWhere(period);
+  const where = listWhere(userId, period, params);
+  const baseWhere = { userId, ...periodWhere(period) };
 
   const [total, filteredAgg, periodAgg] = await Promise.all([
     db.expense.count({ where }),
@@ -92,15 +95,10 @@ export async function listExpenses(
 }
 
 /** All expenses matching the filters (no pagination) – used for CSV export. */
-export async function exportExpenses(period: Period, params: ExpenseListParams) {
+export async function exportExpenses(userId: string, period: Period, params: ExpenseListParams) {
   const rows = await db.expense.findMany({
-    where: listWhere(period, params),
+    where: listWhere(userId, period, params),
     orderBy: orderBy(params.sort),
   });
   return rows.map(toExpenseDTO);
-}
-
-export async function getExpenseById(id: string) {
-  const row = await db.expense.findUnique({ where: { id } });
-  return row ? toExpenseDTO(row) : null;
 }

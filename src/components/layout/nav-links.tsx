@@ -1,25 +1,30 @@
 "use client";
 
-import { LayoutDashboard, PlusCircle, ReceiptText } from "lucide-react";
+import { LayoutDashboard, PlusCircle, ReceiptText, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { cn } from "@/lib/utils";
 
-const NAV_ITEMS = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard, keepPeriod: true },
-  { href: "/expenses", label: "Expenses", icon: ReceiptText, keepPeriod: true },
-  { href: "/expenses/new", label: "Add Expense", icon: PlusCircle, keepPeriod: false },
-] as const;
+export type NavVariant = "user" | "admin";
 
-type NavLinksProps = { onNavigate?: () => void; className?: string };
+const NAV_ITEMS = {
+  user: [
+    { href: "/", label: "Dashboard", icon: LayoutDashboard, keepPeriod: true },
+    { href: "/expenses", label: "Expenses", icon: ReceiptText, keepPeriod: true },
+    { href: "/expenses/new", label: "Add Expense", icon: PlusCircle, keepPeriod: false },
+  ],
+  admin: [{ href: "/admin/users", label: "Users", icon: Users, keepPeriod: false }],
+} as const;
 
-function NavLinksInner({ onNavigate, className, period }: NavLinksProps & { period: string | null }) {
+type NavLinksProps = { variant: NavVariant; onNavigate?: () => void; className?: string };
+
+function NavLinksInner({ variant, onNavigate, className, period }: NavLinksProps & { period: string | null }) {
   const pathname = usePathname();
 
   return (
     <nav className={cn("flex flex-col gap-1", className)}>
-      {NAV_ITEMS.map(({ href, label, icon: Icon, keepPeriod }) => {
+      {NAV_ITEMS[variant].map(({ href, label, icon: Icon, keepPeriod }) => {
         const active = href === "/" ? pathname === "/" : pathname === href;
         const target = keepPeriod && period ? `${href}?period=${encodeURIComponent(period)}` : href;
         return (

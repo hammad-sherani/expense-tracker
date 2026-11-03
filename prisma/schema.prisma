@@ -33,8 +33,48 @@ enum PaymentMethod {
   OTHER
 }
 
+enum Role {
+  USER
+  ADMIN
+}
+
+model User {
+  id            String     @id @default(auto()) @map("_id") @db.ObjectId
+  /// Lower-case, 3-20 chars of a-z, 0-9 and underscore.
+  username      String     @unique
+  /// Lower-case email address.
+  email         String     @unique
+  passwordHash  String
+  role          Role       @default(USER)
+  /// Set once the email OTP has been confirmed. Unverified users cannot log in.
+  emailVerified DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  expenses      Expense[]
+  emailOtps     EmailOtp[]
+
+  @@index([role, createdAt])
+  @@map("users")
+}
+
+/// One-time code sent by email to verify an account. Only a hash is stored.
+model EmailOtp {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("email_otps")
+}
+
 model Expense {
   id            String         @id @default(auto()) @map("_id") @db.ObjectId
+  userId        String         @db.ObjectId
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// Amount in PKR, stored with at most 2 decimal places.
   amount        Float
   description   String
@@ -47,7 +87,7 @@ model Expense {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
-  @@index([date])
-  @@index([category, date])
+  @@index([userId, date])
+  @@index([userId, category, date])
   @@map("expenses")
 }

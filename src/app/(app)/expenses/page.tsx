@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { requireUser } from "@/lib/auth/dal";
 import { CATEGORY_META } from "@/lib/constants";
 import { currentYearMonth, parsePeriod, periodLabel, periodToParam } from "@/lib/dates";
 import { formatCurrency } from "@/lib/format";
@@ -44,11 +45,12 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 async function Expenses({ searchParams }: { searchParams: PageProps<"/expenses">["searchParams"] }) {
   // The default period is "this month", so always render at request time.
   await connection();
+  const user = await requireUser();
   const sp = await searchParams;
   const period = parsePeriod(sp.period);
   const periodParam = periodToParam(period);
   const params = parseExpenseListParams(sp);
-  const result = await listExpenses(period, params);
+  const result = await listExpenses(user.id, period, params);
   const label = periodLabel(period);
   const isFiltered = Boolean(params.q || params.category);
 

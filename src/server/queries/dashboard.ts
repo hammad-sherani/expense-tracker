@@ -157,35 +157,36 @@ function slicesFromRows(rows: Row[]) {
   return buildSlices(totals);
 }
 
-async function sumBetween(start: Date, end: Date) {
+async function sumBetween(userId: string, start: Date, end: Date) {
   const agg = await db.expense.aggregate({
-    where: { date: { gte: start, lt: end } },
+    where: { userId, date: { gte: start, lt: end } },
     _sum: { amount: true },
   });
   return roundMoney(agg._sum.amount ?? 0);
 }
 
-async function fetchRows(start: Date, end: Date): Promise<Row[]> {
+async function fetchRows(userId: string, start: Date, end: Date): Promise<Row[]> {
   return db.expense.findMany({
-    where: { date: { gte: start, lt: end } },
+    where: { userId, date: { gte: start, lt: end } },
     select: { amount: true, date: true, category: true },
   });
 }
 
-async function fetchRecent(period: Period) {
+async function fetchRecent(userId: string, period: Period) {
   const rows = await db.expense.findMany({
-    where: periodWhere(period),
+    where: { userId, ...periodWhere(period) },
     orderBy: [{ date: "desc" }, { createdAt: "desc" }],
     take: 6,
   });
   return rows.map(toExpenseDTO);
 }
 
-export async function getDashboardData(period: Period): Promise<DashboardData> {
-  return period.kind === "month" ? getMonthDashboard(period) : getAllTimeDashboard();
+/** All figures are scoped to one user's expenses. */
+export async function getDashboardData(userId: string, period: Period): Promise<DashboardData> {
+  return period.kind === "month" ? getMonthDashboard(userId, period) : getAllTimeDashboard(userId);
 }
 
-async function getMonthDashboard(period: Extract<Period, { kind: "month" }>): Promise<DashboardData> {
+async function getMonthDashboard(userId: string, period: Extract<Period, { kind: "month" }>): Promise<DashboardData> {
   const { year, month } = period;
   const now = currentYearMonth();
   const today = todayUTC();
@@ -200,10 +201,10 @@ async function getMonthDashboard(period: Extract<Period, { kind: "month" }>): Pr
   const yr = yearRange(year);
 
   const [rows, yearTotal, todayTotal, recent] = await Promise.all([
-    fetchRows(windowStart, windowEnd),
-    sumBetween(yr.start, yr.end),
-    sumBetween(today, addDays(today, 1)),
-    fetchRecent(period),
+    fetchRows(userId, windowStart, windowEnd),
+    sumBetween(userId, yr.start, yr.end),
+    sumBetween(userId, today, addDays(today, 1)),
+    fetchRecent(userId, period),
   ]);
 
   const monthRows = inMonth(rows, year, month);
@@ -259,7 +260,7 @@ async function getMonthDashboard(period: Extract<Period, { kind: "month" }>): Pr
   };
 }
 
-async function getAllTimeDashboard(): Promise<DashboardData> {
+async function getAllTimeDashboard(userId: string): Promise<DashboardData> {
   const { year, month } = currentYearMonth();
   const today = todayUTC();
   const prev = shiftMonth(year, month, -1);
@@ -269,11 +270,11 @@ async function getAllTimeDashboard(): Promise<DashboardData> {
   const yr = yearRange(year);
 
   const [rows, allAgg, grouped, yearTotal, recent] = await Promise.all([
-    fetchRows(windowStart, windowEnd),
-    db.expense.aggregate({ _sum: { amount: true }, _count: { _all: true }, _min: { date: true } }),
-    db.expense.groupBy({ by: ["category"], _sum: { amount: true }, _count: { _all: true } }),
-    sumBetween(yr.start, yr.end),
-    fetchRecent({ kind: "all" }),
+    fetchRows(userId, windowStart, windowEnd),
+    db.expense.aggregate({ where: { userId }, _sum: { amount: true }, _count: { _all: true }, _min: { date: true } }),
+    db.expense.groupBy({ by: ["category"], where: { userId }, _sum: { amount: true }, _count: { _all: true } }),
+    sumBetween(userId, yr.start, yr.end),
+    fetchRecent(userId, { kind: "all" }),
   ]);
 
   const allTotal = roundMoney(allAgg._sum.amount ?? 0);

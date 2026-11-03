@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { getCurrentUser } from "@/lib/auth/dal";
 import { CATEGORY_META, PAYMENT_METHOD_LABELS } from "@/lib/constants";
 import { parsePeriod, periodToParam } from "@/lib/dates";
 import { parseExpenseListParams } from "@/lib/validations/expense";
@@ -13,12 +14,17 @@ function csvCell(value: string | number | null | undefined): string {
 }
 
 export async function GET(request: NextRequest) {
+  const user = await getCurrentUser();
+  if (!user || user.role !== "USER") {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const sp = Object.fromEntries(request.nextUrl.searchParams.entries());
   const period = parsePeriod(sp.period);
   const params = parseExpenseListParams(sp);
 
   try {
-    const expenses = await exportExpenses(period, params);
+    const expenses = await exportExpenses(user.id, period, params);
 
     const header = [
       "Date",

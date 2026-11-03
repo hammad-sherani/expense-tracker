@@ -2,6 +2,7 @@
 
 import { Prisma } from "@prisma/client";
 import { refresh, revalidatePath } from "next/cache";
+import { requireUser } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
 import { dateInputToUTC } from "@/lib/dates";
 import { roundMoney } from "@/lib/format";
@@ -51,8 +52,10 @@ export async function createExpense(input: ExpenseFormValues): Promise<ActionRes
     };
   }
 
+  const user = await requireUser();
+
   try {
-    const expense = await db.expense.create({ data: toData(parsed.data) });
+    const expense = await db.expense.create({ data: { ...toData(parsed.data), userId: user.id } });
     revalidateAll();
     return { ok: true, data: toExpenseDTO(expense), message: "Expense added" };
   } catch (error) {
@@ -76,9 +79,12 @@ export async function updateExpense(
     };
   }
 
+  const user = await requireUser();
+
   try {
+    // userId in the filter: a user can only ever change their own expenses.
     const expense = await db.expense.update({
-      where: { id: idResult.data },
+      where: { id: idResult.data, userId: user.id },
       data: toData(parsed.data),
     });
     revalidateAll();
@@ -92,8 +98,10 @@ export async function deleteExpense(id: string): Promise<ActionResult> {
   const idResult = objectIdSchema.safeParse(id);
   if (!idResult.success) return { ok: false, error: "Invalid expense id." };
 
+  const user = await requireUser();
+
   try {
-    await db.expense.delete({ where: { id: idResult.data } });
+    await db.expense.delete({ where: { id: idResult.data, userId: user.id } });
     revalidateAll();
     return { ok: true, data: undefined, message: "Expense deleted" };
   } catch (error) {
