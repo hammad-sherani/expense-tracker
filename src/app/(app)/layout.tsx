@@ -4,6 +4,7 @@ import { AppHeader } from "@/components/layout/app-header";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { UserMenu, UserMenuSkeleton } from "@/components/layout/user-menu";
 
+
 /** Shell for regular users: expense tracker navigation, quick add and dialogs. */
 export default function AppLayout({ children }: LayoutProps<"/">) {
   return (
