@@ -24,6 +24,7 @@ export default function DashboardPage({ searchParams }: PageProps<"/">) {
   );
 }
 
+
 async function Dashboard({ searchParams }: { searchParams: PageProps<"/">["searchParams"] }) {
   // Figures depend on "today", so always render at request time.
   await connection();
