@@ -3,7 +3,6 @@ import Link from "next/link";
 import { CategoryIcon } from "@/components/expenses/category-badge";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { CATEGORY_META } from "@/lib/constants";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import type { DashboardData } from "@/types";
 
@@ -41,16 +40,20 @@ export function CategoryBreakdown({
         ) : (
           <ul className="flex flex-col gap-1">
             {data.slices.map((s) => (
-              <li key={s.category}>
+              <li key={s.category.id || s.category.name}>
                 <Link
-                  href={`/expenses?period=${periodParam}&category=${s.category}`}
+                  href={
+                    s.category.id
+                      ? `/expenses?period=${periodParam}&category=${s.category.id}`
+                      : `/expenses?period=${periodParam}`
+                  }
                   className="group -mx-2 flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-muted/60"
-                  title={`View ${CATEGORY_META[s.category].label} expenses`}
+                  title={`View ${s.category.name} expenses`}
                 >
                   <CategoryIcon category={s.category} size="sm" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-2 text-sm">
-                      <span className="truncate font-medium">{CATEGORY_META[s.category].label}</span>
+                      <span className="truncate font-medium">{s.category.name}</span>
                       <span className="shrink-0 font-medium tabular-nums">{formatCurrency(s.total)}</span>
                     </div>
                     <div className="mt-1.5 flex items-center gap-2">

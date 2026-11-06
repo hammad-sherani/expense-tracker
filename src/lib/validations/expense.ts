@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CATEGORIES, MAX_AMOUNT, PAYMENT_METHODS, SORT_OPTIONS } from "@/lib/constants";
+import { MAX_AMOUNT, SORT_OPTIONS } from "@/lib/constants";
 import { isValidDateInput } from "@/lib/dates";
 
 const AMOUNT_RE = /^\d+(\.\d{1,2})?$/;
@@ -26,9 +26,11 @@ export const expenseFormSchema = z.object({
     .string()
     .min(1, "Date is required")
     .refine(isValidDateInput, "Enter a valid date"),
-  category: z.enum(CATEGORIES, { error: "Select a category" }),
+  categoryId: z.string({ error: "Select a category" }).regex(OBJECT_ID_RE, "Select a category"),
   // "" means "not specified"
-  paymentMethod: z.union([z.enum(PAYMENT_METHODS), z.literal("")]),
+  walletId: z.union([z.string().regex(OBJECT_ID_RE, "Choose a wallet"), z.literal("")]),
+  /** Trip/group the bill belongs to ("" = none). */
+  groupId: z.union([z.string().regex(OBJECT_ID_RE, "Choose a group"), z.literal("")]),
   notes: z.string().trim().max(1000, "Notes must be 1000 characters or fewer"),
   /**
    * Splitting the bill with friends. When enabled, `amount` is the WHOLE bill;
@@ -40,6 +42,8 @@ export const expenseFormSchema = z.object({
     paidBy: z.string(),
     myShare: z.string().trim(),
     participants: z.array(z.object({ friendId: z.string(), share: z.string().trim() })).max(20),
+    /** Optional "pay back by" date for the dues this creates ("" = none). */
+    dueDate: z.union([z.string().refine(isValidDateInput, "Enter a valid date"), z.literal("")]),
   }),
 }).superRefine((v, ctx) => {
   if (!v.split.enabled) return;
@@ -97,6 +101,7 @@ export const EMPTY_SPLIT: ExpenseFormValues["split"] = {
   paidBy: "me",
   myShare: "",
   participants: [],
+  dueDate: "",
 };
 
 /** Maps Zod issues to dotted field paths, e.g. "split.participants.0.share". */
@@ -112,7 +117,8 @@ export function issuesToFieldErrors(error: z.ZodError) {
 /** Search params accepted by the expenses list and the CSV export. */
 export const expenseListParamsSchema = z.object({
   q: z.string().trim().max(100).catch(""),
-  category: z.enum(CATEGORIES).optional().catch(undefined),
+  category: z.string().regex(OBJECT_ID_RE).optional().catch(undefined),
+  wallet: z.string().regex(OBJECT_ID_RE).optional().catch(undefined),
   sort: z
     .enum(Object.keys(SORT_OPTIONS) as [keyof typeof SORT_OPTIONS, ...(keyof typeof SORT_OPTIONS)[]])
     .catch("date-desc"),
@@ -129,6 +135,7 @@ export function parseExpenseListParams(sp: RawSearchParams): ExpenseListParams {
   return expenseListParamsSchema.parse({
     q: first(sp.q) ?? "",
     category: first(sp.category) || undefined,
+    wallet: first(sp.wallet) || undefined,
     sort: first(sp.sort) ?? "date-desc",
     page: first(sp.page) ?? 1,
   });

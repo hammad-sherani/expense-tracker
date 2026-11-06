@@ -16,11 +16,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { requireUser } from "@/lib/auth/dal";
-import { CATEGORY_META } from "@/lib/constants";
 import { currentYearMonth, parsePeriod, periodLabel, periodToParam } from "@/lib/dates";
 import { formatCurrency } from "@/lib/format";
 import { parseExpenseListParams } from "@/lib/validations/expense";
 import { listExpenses } from "@/server/queries/expenses";
+import { listCategories, listWallets } from "@/server/queries/lookups";
 
 export const metadata: Metadata = { title: "Expenses" };
 
@@ -50,9 +50,17 @@ async function Expenses({ searchParams }: { searchParams: PageProps<"/expenses">
   const period = parsePeriod(sp.period);
   const periodParam = periodToParam(period);
   const params = parseExpenseListParams(sp);
-  const result = await listExpenses(user.id, period, params);
+  const [result, categories, wallets] = await Promise.all([
+    listExpenses(user.id, period, params),
+    listCategories(user.id),
+    listWallets(user.id, false),
+  ]);
   const label = periodLabel(period);
-  const isFiltered = Boolean(params.q || params.category);
+  const isFiltered = Boolean(params.q || params.category || params.wallet);
+  const filterNames = [
+    categories.find((c) => c.id === params.category)?.name,
+    wallets.find((w) => w.id === params.wallet)?.name,
+  ].filter(Boolean);
 
   return (
     <>
@@ -63,7 +71,13 @@ async function Expenses({ searchParams }: { searchParams: PageProps<"/expenses">
           <>
             <PeriodPicker value={periodParam} current={currentYearMonth()} />
             <ExportButton
-              params={{ period: periodParam, q: params.q, category: params.category, sort: params.sort }}
+              params={{
+                period: periodParam,
+                q: params.q,
+                category: params.category,
+                wallet: params.wallet,
+                sort: params.sort,
+              }}
             />
             <Button asChild>
               <Link href="/expenses/new">
@@ -89,7 +103,7 @@ async function Expenses({ searchParams }: { searchParams: PageProps<"/expenses">
             )}
             sub={
               isFiltered
-                ? `${result.total} result${result.total === 1 ? "" : "s"}${params.category ? ` in ${CATEGORY_META[params.category].label}` : ""}`
+                ? `${result.total} result${result.total === 1 ? "" : "s"}${filterNames.length ? ` in ${filterNames.join(" · ")}` : ""}`
                 : "per transaction"
             }
           />
@@ -104,7 +118,14 @@ async function Expenses({ searchParams }: { searchParams: PageProps<"/expenses">
           </div>
         </Card>
 
-        <ExpenseFilters q={params.q} category={params.category} sort={params.sort} />
+        <ExpenseFilters
+          q={params.q}
+          category={params.category}
+          wallet={params.wallet}
+          sort={params.sort}
+          categories={categories}
+          wallets={wallets}
+        />
 
         <Card className="gap-0 py-0">
           {result.items.length === 0 ? (

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { WalletSelect } from "@/components/wallets/wallet-select";
 import { todayInput } from "@/lib/dates";
 import { formatCurrency } from "@/lib/format";
 import { recordPayment } from "@/server/actions/dues";
@@ -27,6 +28,7 @@ export function PaymentDialog({
   const [amount, setAmount] = useState(String(due.remaining));
   const [date, setDate] = useState(todayInput());
   const [note, setNote] = useState("");
+  const [walletId, setWalletId] = useState("");
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const [isPending, startTransition] = useTransition();
   const owedToMe = due.direction === "OWED_TO_ME";
@@ -34,7 +36,7 @@ export function PaymentDialog({
   const submit = () => {
     setErrors({});
     startTransition(async () => {
-      const result = await recordPayment(due.id, { amount, date, note });
+      const result = await recordPayment(due.id, { amount, date, note, walletId });
       if (!result.ok) {
         setErrors(Object.fromEntries(Object.entries(result.fieldErrors ?? {}).map(([k, v]) => [k, v?.[0]])));
         toast.error(result.error);
@@ -106,6 +108,14 @@ export function PaymentDialog({
                 aria-invalid={Boolean(errors.date)}
               />
               {errors.date && <FieldError>{errors.date}</FieldError>}
+            </Field>
+            <Field data-invalid={Boolean(errors.walletId)}>
+              <FieldLabel htmlFor="payment-wallet">
+                {owedToMe ? "Received in" : "Paid from"}{" "}
+                <span className="font-normal text-muted-foreground">(optional)</span>
+              </FieldLabel>
+              <WalletSelect id="payment-wallet" value={walletId} onChange={setWalletId} invalid={Boolean(errors.walletId)} />
+              {errors.walletId && <FieldError>{errors.walletId}</FieldError>}
             </Field>
             <Field>
               <FieldLabel htmlFor="payment-note">

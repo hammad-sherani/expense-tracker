@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { OTP_TTL_MINUTES, resendCooldown } from "@/lib/auth/otp";
 import { readPendingVerification } from "@/lib/auth/session";
 import { db } from "@/lib/db";
+import { maskEmail } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Verify your email" };
 
@@ -17,13 +18,6 @@ export default function VerifyEmailPage() {
       <VerifyEmail />
     </Suspense>
   );
-}
-
-/** "hammad@gmail.com" -> "h****d@gmail.com" */
-function maskEmail(email: string) {
-  const [name, domain] = email.split("@");
-  if (name.length <= 2) return `${name[0]}*@${domain}`;
-  return `${name[0]}${"*".repeat(Math.min(6, name.length - 2))}${name.at(-1)}@${domain}`;
 }
 
 async function VerifyEmail() {

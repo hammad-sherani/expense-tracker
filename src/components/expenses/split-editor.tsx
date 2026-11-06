@@ -1,8 +1,9 @@
 "use client";
 
-import { HandCoins, Scale, Users, X } from "lucide-react";
+import { CalendarClock, HandCoins, Scale, Users, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { FriendPicker, useFriends } from "@/components/friends/friend-picker";
+import { useLookups } from "@/components/layout/lookups";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -29,6 +30,7 @@ function sanitizeAmount(raw: string): string {
 }
 
 const fmt = (n: number) => String(n);
+const NO_GROUP = "__none__";
 
 function withEqualShares(split: Split, total: number): Split {
   const valid = Number.isFinite(total) && total > 0;
@@ -52,9 +54,14 @@ export function SplitEditor({
   errors,
   initialFriends = [],
   onPaidForSomeone,
+  groupId,
+  onGroupChange,
 }: {
   value: Split;
   onChange: (next: Split) => void;
+  /** Trip/group the bill belongs to ("" = none). */
+  groupId: string;
+  onGroupChange: (groupId: string) => void;
   total: number;
   /** Friends already on this expense, so names show before the full list loads. */
   initialFriends?: FriendDTO[];
@@ -63,8 +70,13 @@ export function SplitEditor({
   errors: { participants?: string; myShare?: string; paidBy?: string; shares: Record<number, string | undefined> };
 }) {
   const { friends, loaded, addFriend } = useFriends(value.enabled, initialFriends);
-  // Existing split expenses open in custom mode so saved shares aren't recalculated.
-  const [mode, setMode] = useState<"equal" | "custom">(value.enabled && value.participants.length ? "custom" : "equal");
+  const { groups } = useLookups();
+  const selectedGroup = groups.find((g) => g.id === groupId);
+  // Saved split expenses open in custom mode so their shares aren't recalculated.
+  // A prefilled split without amounts (e.g. adding to a group) starts equal.
+  const [mode, setMode] = useState<"equal" | "custom">(
+    value.enabled && value.participants.some((p) => p.share !== "") ? "custom" : "equal",
+  );
 
   // Keep equal shares in sync with the total bill.
   useEffect(() => {
@@ -139,9 +151,45 @@ export function SplitEditor({
         <Switch
           aria-label="Split this bill"
           checked
-          onCheckedChange={(on) => !on && onChange({ enabled: false, paidBy: "me", myShare: "", participants: [] })}
+          onCheckedChange={(on) => {
+            if (on) return;
+            onChange({ enabled: false, paidBy: "me", myShare: "", participants: [], dueDate: "" });
+            onGroupChange("");
+          }}
         />
       </div>
+
+      {groups.length > 0 && (
+        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+          <label htmlFor="split-group" className="text-sm font-medium">
+            Group / trip <span className="font-normal text-muted-foreground">(optional)</span>
+          </label>
+          <Select
+            value={groupId || NO_GROUP}
+            onValueChange={(v) => {
+              const id = v === NO_GROUP ? "" : v;
+              onGroupChange(id);
+              const g = groups.find((x) => x.id === id);
+              if (!g) return;
+              // Add the group's people to the split (keeps anyone already added).
+              const missing = g.memberIds.filter((m) => !value.participants.some((p) => p.friendId === m));
+              if (missing.length) update({ ...value, participants: [...value.participants, ...missing.map((m) => ({ friendId: m, share: "" }))] });
+            }}
+          >
+            <SelectTrigger id="split-group" className="w-full sm:w-56">
+              <SelectValue>{selectedGroup ? `${selectedGroup.emoji ?? ""} ${selectedGroup.name}`.trim() : "None"}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_GROUP}>None</SelectItem>
+              {groups.map((g) => (
+                <SelectItem key={g.id} value={g.id}>
+                  {`${g.emoji ?? ""} ${g.name}`.trim()}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <FriendPicker
@@ -248,6 +296,20 @@ export function SplitEditor({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+            <label htmlFor="split-due-date" className="flex items-center gap-1.5 text-sm font-medium">
+              <CalendarClock className="size-3.5 text-muted-foreground" />
+              Pay back by <span className="font-normal text-muted-foreground">(optional)</span>
+            </label>
+            <Input
+              id="split-due-date"
+              type="date"
+              className="w-full sm:w-48"
+              value={value.dueDate}
+              onChange={(e) => onChange({ ...value, dueDate: e.target.value })}
+            />
           </div>
 
           <div

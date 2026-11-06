@@ -1,5 +1,6 @@
-import { BadgeCheck, Clock, SearchX, UserPlus, Users } from "lucide-react";
+import { Ban, BadgeCheck, Clock, SearchX, UserPlus, Users } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { UserFilters } from "@/components/admin/user-filters";
@@ -30,7 +31,15 @@ export default function AdminUsersPage({ searchParams }: PageProps<"/admin/users
 
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
-function StatusBadge({ verified }: { verified: boolean }) {
+function StatusBadge({ verified, blocked }: { verified: boolean; blocked: boolean }) {
+  if (blocked) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+        <Ban className="size-3.5" />
+        Blocked
+      </span>
+    );
+  }
   return (
     <span
       className={cn(
@@ -64,7 +73,8 @@ async function UsersView({ searchParams }: { searchParams: PageProps<"/admin/use
   const sp = await searchParams;
   const q = (first(sp.q) ?? "").trim().slice(0, 100);
   const rawStatus = first(sp.status);
-  const status: UserStatusFilter = rawStatus === "verified" || rawStatus === "pending" ? rawStatus : "all";
+  const status: UserStatusFilter =
+    rawStatus === "verified" || rawStatus === "pending" || rawStatus === "blocked" ? rawStatus : "all";
   const page = Math.max(1, Number.parseInt(first(sp.page) ?? "1", 10) || 1);
 
   const result = await listUsers({ q, status, page });
@@ -113,12 +123,14 @@ async function UsersView({ searchParams }: { searchParams: PageProps<"/admin/use
                                 {initials(u.username)}
                               </AvatarFallback>
                             </Avatar>
-                            <span className="font-medium">{u.username}</span>
+                            <Link href={`/admin/users/${u.id}`} className="font-medium hover:underline">
+                              {u.username}
+                            </Link>
                           </div>
                         </TableCell>
                         <TableCell className="text-muted-foreground">{u.email}</TableCell>
                         <TableCell>
-                          <StatusBadge verified={u.verified} />
+                          <StatusBadge verified={u.verified} blocked={u.blocked} />
                         </TableCell>
                         <TableCell className="pr-5 text-right whitespace-nowrap text-muted-foreground">
                           {formatTimestamp(u.createdAt)}
@@ -137,10 +149,12 @@ async function UsersView({ searchParams }: { searchParams: PageProps<"/admin/use
                       </AvatarFallback>
                     </Avatar>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{u.username}</p>
+                      <Link href={`/admin/users/${u.id}`} className="block truncate text-sm font-medium">
+                        {u.username}
+                      </Link>
                       <p className="truncate text-xs text-muted-foreground">{u.email}</p>
                     </div>
-                    <StatusBadge verified={u.verified} />
+                    <StatusBadge verified={u.verified} blocked={u.blocked} />
                   </li>
                 ))}
               </ul>

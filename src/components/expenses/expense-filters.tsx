@@ -7,11 +7,27 @@ import { useNavigationTransition } from "@/components/shared/navigation-transiti
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CATEGORIES, CATEGORY_META, DEFAULT_SORT, SORT_OPTIONS } from "@/lib/constants";
+import { categoryIcon } from "@/lib/category-icons";
+import { DEFAULT_SORT, SORT_OPTIONS } from "@/lib/constants";
+import type { CategoryDTO, WalletDTO } from "@/types";
 
 const ALL = "__all__";
 
-export function ExpenseFilters({ q, category, sort }: { q: string; category?: string; sort: string }) {
+export function ExpenseFilters({
+  q,
+  category,
+  wallet,
+  sort,
+  categories,
+  wallets,
+}: {
+  q: string;
+  category?: string;
+  wallet?: string;
+  sort: string;
+  categories: CategoryDTO[];
+  wallets: WalletDTO[];
+}) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { navigate } = useNavigationTransition();
@@ -49,7 +65,9 @@ export function ExpenseFilters({ q, category, sort }: { q: string; category?: st
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
-  const hasFilters = Boolean(q || category || sort !== DEFAULT_SORT);
+  const hasFilters = Boolean(q || category || wallet || sort !== DEFAULT_SORT);
+  const selectedCategory = categories.find((c) => c.id === category);
+  const selectedWallet = wallets.find((w) => w.id === wallet);
 
   return (
     <div className="flex flex-col gap-2 md:flex-row md:items-center">
@@ -76,28 +94,39 @@ export function ExpenseFilters({ q, category, sort }: { q: string; category?: st
       </div>
       <div className="grid grid-cols-2 gap-2 md:flex">
         <Select value={category ?? ALL} onValueChange={(v) => update({ category: v === ALL ? undefined : v })}>
-          <SelectTrigger className="w-full md:w-48" aria-label="Filter by category">
-            <SelectValue>
-              {category && category in CATEGORY_META
-                ? CATEGORY_META[category as keyof typeof CATEGORY_META].label
-                : "All categories"}
-            </SelectValue>
+          <SelectTrigger className="w-full md:w-44" aria-label="Filter by category">
+            <SelectValue>{selectedCategory?.name ?? "All categories"}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL}>All categories</SelectItem>
-            {CATEGORIES.map((c) => {
-              const Icon = CATEGORY_META[c].icon;
+            {categories.map((c) => {
+              const Icon = categoryIcon(c.icon);
               return (
-                <SelectItem key={c} value={c}>
-                  <Icon style={{ color: CATEGORY_META[c].color }} />
-                  {CATEGORY_META[c].label}
+                <SelectItem key={c.id} value={c.id}>
+                  <Icon style={{ color: c.color }} />
+                  {c.name}
+                  {c.archived && <span className="text-xs text-muted-foreground">(archived)</span>}
                 </SelectItem>
               );
             })}
           </SelectContent>
         </Select>
+        <Select value={wallet ?? ALL} onValueChange={(v) => update({ wallet: v === ALL ? undefined : v })}>
+          <SelectTrigger className="w-full md:w-40" aria-label="Filter by wallet">
+            <SelectValue>{selectedWallet?.name ?? "All wallets"}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All wallets</SelectItem>
+            {wallets.map((w) => (
+              <SelectItem key={w.id} value={w.id}>
+                <span className="size-2 rounded-full" style={{ backgroundColor: w.color }} />
+                {w.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Select value={sort} onValueChange={(v) => update({ sort: v === DEFAULT_SORT ? undefined : v })}>
-          <SelectTrigger className="w-full md:w-44" aria-label="Sort expenses">
+          <SelectTrigger className="col-span-2 w-full md:col-span-1 md:w-40" aria-label="Sort expenses">
             <SelectValue>{SORT_OPTIONS[sort as keyof typeof SORT_OPTIONS] ?? SORT_OPTIONS[DEFAULT_SORT]}</SelectValue>
           </SelectTrigger>
           <SelectContent>
@@ -115,7 +144,7 @@ export function ExpenseFilters({ q, category, sort }: { q: string; category?: st
           onClick={() => {
             lastPushed.current = "";
             setSearch("");
-            update({ q: undefined, category: undefined, sort: undefined });
+            update({ q: undefined, category: undefined, wallet: undefined, sort: undefined });
           }}
         >
           <X />

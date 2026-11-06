@@ -35,6 +35,15 @@ export function DuesWidget({ summary, topOwing }: { summary: DuesSummary; topOwi
             <p className="mt-1 text-lg font-semibold text-destructive tabular-nums">{formatCurrency(summary.iOwe)}</p>
           </div>
         </div>
+        {summary.overdue > 0 && (
+          <Link
+            href="/dues?status=overdue"
+            className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/15"
+          >
+            <span className="size-2 rounded-full bg-destructive" />
+            {summary.overdue} due{summary.overdue === 1 ? " is" : "s are"} overdue
+          </Link>
+        )}
         {topOwing.length === 0 ? (
           <EmptyState
             icon={HandCoins}

@@ -10,7 +10,8 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Category {
+/// Fixed categories from v1. Kept so old expenses stay readable; new data uses the Category model.
+enum LegacyCategory {
   FOOD
   TRANSPORT
   SHOPPING
@@ -44,23 +45,68 @@ enum Role {
   ADMIN
 }
 
+enum OtpPurpose {
+  VERIFY_EMAIL
+  RESET_PASSWORD
+  CHANGE_EMAIL
+}
+
+enum WalletType {
+  CASH
+  BANK
+  MOBILE
+  CARD
+  OTHER
+}
+
+enum Frequency {
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+enum IncomeType {
+  SALARY
+  FREELANCE
+  BUSINESS
+  GIFT
+  REFUND
+  OTHER
+}
+
 model User {
-  id            String       @id @default(auto()) @map("_id") @db.ObjectId
+  id                 String             @id @default(auto()) @map("_id") @db.ObjectId
   /// Lower-case, 3-20 chars of a-z, 0-9 and underscore.
-  username      String       @unique
+  username           String             @unique
   /// Lower-case email address.
-  email         String       @unique
-  passwordHash  String
-  role          Role         @default(USER)
+  email              String             @unique
+  passwordHash       String
+  role               Role               @default(USER)
   /// Set once the email OTP has been confirmed. Unverified users cannot log in.
-  emailVerified DateTime?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  expenses      Expense[]
-  emailOtps     EmailOtp[]
-  friends       Friend[]
-  dues          Due[]
-  duePayments   DuePayment[]
+  emailVerified      DateTime?
+  /// Bumped on password change / reset / block to log out every session. null = 0.
+  sessionVersion     Int?
+  /// Email a PDF report when a month ends. null = off.
+  monthlyReportEmail Boolean?
+  /// "YYYY-MM" of the last monthly report emailed.
+  lastReportMonth    String?
+  /// Set by an admin; blocked users can't log in.
+  blockedAt          DateTime?
+  lastActiveAt       DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  expenses           Expense[]
+  emailOtps          EmailOtp[]
+  friends            Friend[]
+  dues               Due[]
+  duePayments        DuePayment[]
+  categories         Category[]
+  wallets            Wallet[]
+  incomes            Income[]
+  transfers          Transfer[]
+  budgets            Budget[]
+  recurring          RecurringExpense[]
+  groups             Group[]
 
   @@index([role, createdAt])
   @@map("users")
@@ -68,43 +114,63 @@ model User {
 
 /// One-time code sent by email to verify an account. Only a hash is stored.
 model EmailOtp {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId    String   @db.ObjectId
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String      @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String      @db.ObjectId
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// null = VERIFY_EMAIL (codes created before purposes existed).
+  purpose   OtpPurpose?
+  /// CHANGE_EMAIL: the address being confirmed.
+  newEmail  String?
   codeHash  String
   expiresAt DateTime
-  attempts  Int      @default(0)
-  createdAt DateTime @default(now())
+  attempts  Int         @default(0)
+  createdAt DateTime    @default(now())
 
   @@index([userId])
   @@map("email_otps")
 }
 
 model Expense {
-  id             String         @id @default(auto()) @map("_id") @db.ObjectId
-  userId         String         @db.ObjectId
-  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String            @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String            @db.ObjectId
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// Amount in PKR, stored with at most 2 decimal places.
   amount         Float
   description    String
   /// Calendar date of the expense, stored as 00:00:00.000 UTC of that day.
   /// This keeps the calendar day stable regardless of server/browser timezone.
   date           DateTime
-  category       Category
+  /// v1 fixed category; only read for expenses not yet migrated to `categoryId`.
+  legacyCategory LegacyCategory?   @map("category")
+  categoryId     String?           @db.ObjectId
+  category       Category?         @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  /// Wallet the money left from (when I paid).
+  walletId       String?           @db.ObjectId
+  wallet         Wallet?           @relation(fields: [walletId], references: [id], onDelete: SetNull)
+  /// v1 field, replaced by `walletId`. Read-only for old rows.
   paymentMethod  PaymentMethod?
+  /// Trip/group this bill belongs to.
+  groupId        String?           @db.ObjectId
+  group          Group?            @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  /// Everyone's share of a split bill (friendId null = me). Lets groups work out who owes whom.
+  shares         SplitShare[]
+  /// The recurring bill this expense paid, if any.
+  recurringId    String?           @db.ObjectId
+  recurring      RecurringExpense? @relation(fields: [recurringId], references: [id], onDelete: SetNull)
   notes          String?
   /// Whole bill when the expense is split with friends (null = not split).
   /// `amount` is always *my share*, so statistics only count what I spent.
   splitTotal     Float?
   /// Friend who paid the bill (null = I paid).
-  paidByFriendId String?        @db.ObjectId
-  paidByFriend   Friend?        @relation("PaidBy", fields: [paidByFriendId], references: [id], onDelete: SetNull)
+  paidByFriendId String?           @db.ObjectId
+  paidByFriend   Friend?           @relation("PaidBy", fields: [paidByFriendId], references: [id], onDelete: SetNull)
   dues           Due[]
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
 
   @@index([userId, date])
-  @@index([userId, category, date])
+  @@index([userId, categoryId, date])
+  @@index([userId, walletId])
   @@map("expenses")
 }
 
@@ -137,8 +203,13 @@ model Due {
   description String?
   /// Calendar day of a standalone due (UTC midnight, like Expense.date).
   date        DateTime?
+  /// Standalone due I paid fully: the wallet the money left from.
+  walletId    String?      @db.ObjectId
+  wallet      Wallet?      @relation(fields: [walletId], references: [id], onDelete: SetNull)
   direction   DueDirection
   amount      Float
+  /// Optional "pay back by" date (UTC midnight). Pending dues past it are overdue.
+  dueDate     DateTime?
   /// Sum of `payments`, kept in sync inside the same transaction.
   paidAmount  Float        @default(0)
   payments    DuePayment[]
@@ -162,8 +233,184 @@ model DuePayment {
   /// Calendar day of the payment (UTC midnight, like Expense.date).
   date      DateTime
   note      String?
+  /// Wallet the money went into (owed to me) or came out of (I owe).
+  walletId  String?  @db.ObjectId
+  wallet    Wallet?  @relation(fields: [walletId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
 
   @@index([dueId])
   @@map("due_payments")
+}
+
+/// A user's own expense category.
+model Category {
+  id         String             @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String             @db.ObjectId
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  /// Lower-cased name, unique per user.
+  nameKey    String
+  /// Icon name from src/lib/category-icons.ts.
+  icon       String
+  /// Hex colour, e.g. "#f97316".
+  color      String
+  sortOrder  Int                @default(0)
+  /// Archived categories are hidden from pickers but keep their expenses.
+  archivedAt DateTime?
+  createdAt  DateTime           @default(now())
+  expenses   Expense[]
+  budgets    Budget[]
+  recurring  RecurringExpense[]
+
+  @@unique([userId, nameKey])
+  @@map("categories")
+}
+
+/// Where money is kept: cash, a bank account, JazzCash, a card...
+model Wallet {
+  id             String             @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String             @db.ObjectId
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  nameKey        String
+  type           WalletType
+  /// Balance before anything was recorded in the app.
+  openingBalance Float              @default(0)
+  color          String
+  sortOrder      Int                @default(0)
+  archivedAt     DateTime?
+  createdAt      DateTime           @default(now())
+  expenses       Expense[]
+  incomes        Income[]
+  dues           Due[]
+  duePayments    DuePayment[]
+  transfersOut   Transfer[]         @relation("TransferFrom")
+  transfersIn    Transfer[]         @relation("TransferTo")
+  recurring      RecurringExpense[]
+
+  @@unique([userId, nameKey])
+  @@map("wallets")
+}
+
+/// Money moved between two of the user's wallets. Not income or spending.
+model Transfer {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String   @db.ObjectId
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fromWalletId String   @db.ObjectId
+  fromWallet   Wallet   @relation("TransferFrom", fields: [fromWalletId], references: [id], onDelete: Cascade)
+  toWalletId   String   @db.ObjectId
+  toWallet     Wallet   @relation("TransferTo", fields: [toWalletId], references: [id], onDelete: Cascade)
+  amount       Float
+  /// Calendar day (UTC midnight).
+  date         DateTime
+  note         String?
+  createdAt    DateTime @default(now())
+
+  @@index([userId, date])
+  @@map("transfers")
+}
+
+model Income {
+  id        String     @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String     @db.ObjectId
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount    Float
+  /// Where it came from, e.g. "October salary".
+  source    String
+  type      IncomeType
+  walletId  String?    @db.ObjectId
+  wallet    Wallet?    @relation(fields: [walletId], references: [id], onDelete: SetNull)
+  /// Calendar day (UTC midnight).
+  date      DateTime
+  notes     String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@index([userId, date])
+  @@map("incomes")
+}
+
+/// One person's share of a split bill. friendId null = me.
+type SplitShare {
+  friendId String? @db.ObjectId
+  amount   Float
+}
+
+/// A monthly spending limit, for one category or (categoryId null) everything.
+model Budget {
+  id         String        @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String        @db.ObjectId
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId String?       @db.ObjectId
+  category   Category?     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  amount     Float
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  alerts     BudgetAlert[]
+
+  @@unique([userId, categoryId])
+  @@map("budgets")
+}
+
+/// Remembers which 80% / 100% alerts were already sent for a month.
+model BudgetAlert {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  budgetId  String   @db.ObjectId
+  budget    Budget   @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  /// "YYYY-MM"
+  month     String
+  /// 80 or 100
+  level     Int
+  createdAt DateTime @default(now())
+
+  @@unique([budgetId, month, level])
+  @@map("budget_alerts")
+}
+
+/// A bill that repeats (rent, internet, subscriptions). Nothing is added
+/// automatically: when it's due the user marks it paid or skips it.
+model RecurringExpense {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String    @db.ObjectId
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  description String
+  amount      Float
+  categoryId  String?   @db.ObjectId
+  category    Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  walletId    String?   @db.ObjectId
+  wallet      Wallet?   @relation(fields: [walletId], references: [id], onDelete: SetNull)
+  frequency   Frequency
+  /// Every N weeks/months/years.
+  interval    Int       @default(1)
+  /// First due date (UTC midnight). Its day of month is kept for later months.
+  startDate   DateTime
+  /// Next unpaid due date.
+  nextDate    DateTime
+  /// No more bills after this date.
+  endDate     DateTime?
+  notes       String?
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  expenses    Expense[]
+
+  @@index([userId, nextDate])
+  @@map("recurring_expenses")
+}
+
+/// A trip or group of people who share many bills (e.g. "Murree trip").
+model Group {
+  id         String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String    @db.ObjectId
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  emoji      String?
+  memberIds  String[]  @db.ObjectId
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  expenses   Expense[]
+
+  @@index([userId])
+  @@map("groups")
 }

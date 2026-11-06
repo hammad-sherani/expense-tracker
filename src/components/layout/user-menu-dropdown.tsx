@@ -1,7 +1,17 @@
 "use client";
 
-import { Loader2, LogOut, ShieldCheck, User } from "lucide-react";
-import { useTransition } from "react";
+import { Download, Loader2, LogOut, Settings, ShieldCheck, Tags, User } from "lucide-react";
+import Link from "next/link";
+import { useState, useTransition } from "react";
+import { toast } from "sonner";
+import { usePwa } from "@/components/layout/pwa";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -25,8 +35,12 @@ export function UserMenuDropdown({
   role: "USER" | "ADMIN";
 }) {
   const [isPending, startTransition] = useTransition();
+  const pwa = usePwa();
+  const [iosHelp, setIosHelp] = useState(false);
+  const showInstall = !pwa.installed && (pwa.canInstall || pwa.isIos);
 
   return (
+    <>
     <DropdownMenu>
       <DropdownMenuTrigger
         className="rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -48,6 +62,38 @@ export function UserMenuDropdown({
           <span className="truncate text-xs text-muted-foreground">{email}</span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        {role === "USER" && (
+          <>
+            <DropdownMenuItem asChild>
+              <Link href="/settings">
+                <Settings />
+                Settings
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/settings/categories">
+                <Tags />
+                Categories
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
+        {showInstall && (
+          <>
+            <DropdownMenuItem
+              onSelect={async () => {
+                if (pwa.canInstall) {
+                  if (await pwa.install()) toast.success("Spendwise installed");
+                } else setIosHelp(true);
+              }}
+            >
+              <Download />
+              Install app
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
         <DropdownMenuItem
           disabled={isPending}
           onSelect={(e) => {
@@ -60,5 +106,16 @@ export function UserMenuDropdown({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+    <Dialog open={iosHelp} onOpenChange={setIosHelp}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Install on iPhone</DialogTitle>
+          <DialogDescription>
+            In Safari, tap the Share button, then choose &quot;Add to Home Screen&quot;. Spendwise will open like an app.
+          </DialogDescription>
+        </DialogHeader>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

@@ -1,5 +1,6 @@
 import { connection } from "next/server";
 import { Suspense } from "react";
+import { BudgetsWidget } from "@/components/dashboard/budgets-widget";
 import { CategoryBreakdown } from "@/components/dashboard/category-breakdown";
 import { DailySpendingChart } from "@/components/dashboard/daily-spending-chart";
 import { DashboardSkeleton } from "@/components/dashboard/dashboard-skeleton";
@@ -10,12 +11,17 @@ import { RecentExpenses } from "@/components/dashboard/recent-expenses";
 import { SummaryCards } from "@/components/dashboard/summary-cards";
 import { ExportButton } from "@/components/expenses/export-button";
 import { PeriodPicker } from "@/components/period/period-picker";
+import { ReportButtons } from "@/components/reports/report-buttons";
+import { UpcomingBillsCard } from "@/components/recurring/recurring-ui";
 import { PageHeader } from "@/components/shared/page-header";
 import { PendingContent } from "@/components/shared/navigation-transition";
 import { requireUser } from "@/lib/auth/dal";
-import { currentYearMonth, parsePeriod, periodToParam } from "@/lib/dates";
+import { currentYearMonth, monthLabel, parsePeriod, periodToParam } from "@/lib/dates";
 import { formatCurrency } from "@/lib/format";
+import { getBudgetStatus } from "@/server/budgets";
 import { getDashboardData } from "@/server/queries/dashboard";
+import { upcomingBills } from "@/server/queries/recurring";
+import { db } from "@/lib/db";
 import { getDuesSummary, listDuesByFriend } from "@/server/queries/dues";
 
 export default function DashboardPage({ searchParams }: PageProps<"/">) {
@@ -34,11 +40,17 @@ async function Dashboard({ searchParams }: { searchParams: PageProps<"/">["searc
   const sp = await searchParams;
   const period = parsePeriod(sp.period);
   const periodParam = periodToParam(period);
-  const [data, duesSummary, owing] = await Promise.all([
+  // Budgets are monthly; "All time" shows this month's.
+  const budgetMonth = period.kind === "month" ? period : currentYearMonth();
+  const [data, duesSummary, owing, budgets, bills, billRules] = await Promise.all([
     getDashboardData(user.id, period),
     getDuesSummary(user.id),
     listDuesByFriend(user.id, "OWED_TO_ME", "pending"),
+    getBudgetStatus(user.id, budgetMonth.year, budgetMonth.month),
+    upcomingBills(user.id),
+    db.recurringExpense.count({ where: { userId: user.id } }),
   ]);
+  const showPlanning = budgets.length > 0 || billRules > 0;
   const headline = data.cards[0];
 
   return (
@@ -56,6 +68,7 @@ async function Dashboard({ searchParams }: { searchParams: PageProps<"/">["searc
         actions={
           <>
             <PeriodPicker value={periodParam} current={currentYearMonth()} />
+            {period.kind === "month" && <ReportButtons period={periodParam} />}
             <ExportButton params={{ period: periodParam }} label="Export" />
           </>
         }
@@ -63,6 +76,17 @@ async function Dashboard({ searchParams }: { searchParams: PageProps<"/">["searc
 
       <PendingContent className="flex flex-col gap-4">
         <SummaryCards cards={data.cards} />
+
+        {showPlanning && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="min-w-0 [&>[data-slot=card]]:h-full">
+              <BudgetsWidget budgets={budgets} periodLabel={monthLabel(budgetMonth.year, budgetMonth.month)} />
+            </div>
+            <div className="min-w-0 [&>[data-slot=card]]:h-full">
+              <UpcomingBillsCard bills={bills} />
+            </div>
+          </div>
+        )}
 
         <div className="grid gap-4 lg:grid-cols-3">
           <div className="min-w-0 lg:col-span-2 [&>[data-slot=card]]:h-full">

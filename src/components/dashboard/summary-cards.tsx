@@ -1,4 +1,15 @@
-import { ArrowDownRight, ArrowUpRight, CalendarClock, CalendarDays, CalendarRange, Gauge, History, Wallet } from "lucide-react";
+import {
+  ArrowDownRight,
+  ArrowUpRight,
+  Banknote,
+  CalendarClock,
+  CalendarDays,
+  CalendarRange,
+  Gauge,
+  History,
+  PiggyBank,
+  Wallet,
+} from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -11,6 +22,8 @@ const ICONS = {
   today: CalendarClock,
   avg: Gauge,
   all: CalendarDays,
+  income: Banknote,
+  saved: PiggyBank,
 } as const;
 
 function Change({ value, label }: { value: number | null | undefined; label?: string }) {

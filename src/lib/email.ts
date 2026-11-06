@@ -1,7 +1,9 @@
 import "server-only";
 import nodemailer from "nodemailer";
 
-type Mail = { to: string; subject: string; text: string; html: string };
+type Attachment = { filename: string; content: Buffer; contentType?: string };
+type Mail = { to: string; subject: string; text: string; html: string; attachments?: Attachment[] };
+type OtpPurpose = "VERIFY_EMAIL" | "RESET_PASSWORD" | "CHANGE_EMAIL";
 
 let transporter: ReturnType<typeof nodemailer.createTransport> | null = null;
 
@@ -39,19 +41,56 @@ export async function sendEmail(mail: Mail) {
   });
 }
 
-export function otpEmail(username: string, code: string, minutes: number): Omit<Mail, "to"> {
-  const subject = `${code} is your Spendwise verification code`;
-  const text = `Hi ${username}, your Spendwise verification code is ${code}. It expires in ${minutes} minutes. If you didn't sign up, you can ignore this email.`;
-  const html = `
-  <div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#1f2133">
-    <p style="font-size:18px;font-weight:600;margin:0 0 16px">Verify your email</p>
-    <p style="margin:0 0 20px;color:#555a6e">Hi ${escapeHtml(username)}, use this code to finish creating your Spendwise account:</p>
+const OTP_COPY: Record<OtpPurpose, { subject: string; title: string; lead: string; ignore: string }> = {
+  VERIFY_EMAIL: {
+    subject: "is your Spendwise verification code",
+    title: "Verify your email",
+    lead: "use this code to finish creating your Spendwise account:",
+    ignore: "If you didn't sign up, you can ignore this email.",
+  },
+  RESET_PASSWORD: {
+    subject: "is your Spendwise password reset code",
+    title: "Reset your password",
+    lead: "use this code to choose a new Spendwise password:",
+    ignore: "If you didn't ask to reset your password, you can ignore this email. Your password stays the same.",
+  },
+  CHANGE_EMAIL: {
+    subject: "confirms your new Spendwise email",
+    title: "Confirm your new email",
+    lead: "use this code to make this address your Spendwise login email:",
+    ignore: "If you didn't ask for this, you can ignore this email.",
+  },
+};
+
+export function otpEmail(
+  username: string,
+  code: string,
+  minutes: number,
+  purpose: OtpPurpose = "VERIFY_EMAIL",
+): Omit<Mail, "to"> {
+  const copy = OTP_COPY[purpose];
+  const subject = `${code} ${copy.subject}`;
+  const text = `Hi ${username}, ${copy.lead} ${code}. It expires in ${minutes} minutes. ${copy.ignore}`;
+  const html = layout(`
+    <p style="font-size:18px;font-weight:600;margin:0 0 16px">${copy.title}</p>
+    <p style="margin:0 0 20px;color:#555a6e">Hi ${escapeHtml(username)}, ${copy.lead}</p>
     <p style="font-size:32px;font-weight:700;letter-spacing:8px;margin:0 0 20px;color:#3b4bd8">${code}</p>
-    <p style="margin:0;color:#555a6e;font-size:13px">The code expires in ${minutes} minutes. If you didn't sign up, you can ignore this email.</p>
-  </div>`;
+    <p style="margin:0;color:#555a6e;font-size:13px">The code expires in ${minutes} minutes. ${copy.ignore}</p>`);
   return { subject, text, html };
 }
 
-function escapeHtml(s: string) {
+/** A short notification email: a title and plain-text paragraphs. */
+export function noticeEmail(title: string, lines: string[]): Omit<Mail, "to"> {
+  const html = layout(`
+    <p style="font-size:18px;font-weight:600;margin:0 0 16px">${escapeHtml(title)}</p>
+    ${lines.map((l) => `<p style="margin:0 0 12px;color:#555a6e">${escapeHtml(l)}</p>`).join("")}`);
+  return { subject: title, text: lines.join("\n\n"), html };
+}
+
+function layout(inner: string) {
+  return `<div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#1f2133">${inner}</div>`;
+}
+
+export function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }

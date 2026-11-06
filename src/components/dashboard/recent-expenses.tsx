@@ -7,7 +7,6 @@ import { useExpenseUI } from "@/components/expenses/expense-dialogs";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { CATEGORY_META } from "@/lib/constants";
 import { formatExpenseDate } from "@/lib/dates";
 import { formatCurrency } from "@/lib/format";
 import type { ExpenseDTO } from "@/types";
@@ -45,7 +44,7 @@ export function RecentExpenses({
             description="Expenses you add for this period will show up here."
             className="py-8"
             action={
-              <Button size="sm" onClick={openCreate}>
+              <Button size="sm" onClick={() => openCreate()}>
                 <Plus />
                 Add expense
               </Button>
@@ -64,7 +63,7 @@ export function RecentExpenses({
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{e.description}</p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {CATEGORY_META[e.category].label} · {formatExpenseDate(e.date, { day: "numeric", month: "short" })}
+                      {e.category.name} · {formatExpenseDate(e.date, { day: "numeric", month: "short" })}
                     </p>
                   </div>
                   <span className="shrink-0 text-sm font-semibold tabular-nums">{formatCurrency(e.amount)}</span>

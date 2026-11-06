@@ -3,7 +3,7 @@
 import { refresh, revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
-import { dateInputToUTC, todayInput } from "@/lib/dates";
+import { dateInputToUTC, formatExpenseDate, isValidDateInput, todayInput } from "@/lib/dates";
 import { formatCurrency, roundMoney } from "@/lib/format";
 import { toPaisa } from "@/lib/split";
 import { type ManualDueValues, manualDueSchema, type PaymentValues, paymentSchema } from "@/lib/validations/dues";
@@ -17,6 +17,14 @@ function revalidateAll() {
 
 class DueError extends Error {}
 
+/** Returns the wallet id if it belongs to the user, null when none was chosen. Throws for someone else's. */
+async function ownWallet(userId: string, walletId: string | undefined) {
+  if (!walletId) return null;
+  const w = await db.wallet.findFirst({ where: { id: walletId, userId }, select: { id: true } });
+  if (!w) throw new DueError("This wallet no longer exists.");
+  return w.id;
+}
+
 /** Records a full or partial repayment of one due. */
 export async function recordPayment(dueId: string, input: PaymentValues): Promise<ActionResult> {
   const idResult = objectIdSchema.safeParse(dueId);
@@ -29,6 +37,7 @@ export async function recordPayment(dueId: string, input: PaymentValues): Promis
   const amount = roundMoney(Number(parsed.data.amount));
 
   try {
+    const walletId = await ownWallet(user.id, parsed.data.walletId);
     await db.$transaction(async (tx) => {
       const due = await tx.due.findFirst({ where: { id: idResult.data, userId: user.id } });
       if (!due) throw new DueError("This due no longer exists.");
@@ -43,6 +52,7 @@ export async function recordPayment(dueId: string, input: PaymentValues): Promis
           amount,
           date: dateInputToUTC(parsed.data.date),
           note: parsed.data.note || null,
+          walletId,
         },
       });
       await tx.due.update({ where: { id: due.id }, data: { paidAmount: roundMoney(due.paidAmount + amount) } });
@@ -57,7 +67,11 @@ export async function recordPayment(dueId: string, input: PaymentValues): Promis
 }
 
 /** Marks every open due with a friend (in one direction) as fully paid today. */
-export async function settleFriend(friendId: string, direction: "OWED_TO_ME" | "I_OWE"): Promise<ActionResult> {
+export async function settleFriend(
+  friendId: string,
+  direction: "OWED_TO_ME" | "I_OWE",
+  walletId?: string,
+): Promise<ActionResult> {
   const idResult = objectIdSchema.safeParse(friendId);
   if (!idResult.success || (direction !== "OWED_TO_ME" && direction !== "I_OWE")) {
     return { ok: false, error: "Invalid request." };
@@ -66,6 +80,7 @@ export async function settleFriend(friendId: string, direction: "OWED_TO_ME" | "
   const today = dateInputToUTC(todayInput());
 
   try {
+    const wallet = await ownWallet(user.id, walletId && objectIdSchema.safeParse(walletId).success ? walletId : undefined);
     const settled = await db.$transaction(async (tx) => {
       const dues = await tx.due.findMany({ where: { userId: user.id, friendId: idResult.data, direction } });
       let total = 0;
@@ -73,7 +88,7 @@ export async function settleFriend(friendId: string, direction: "OWED_TO_ME" | "
         const remaining = roundMoney(due.amount - due.paidAmount);
         if (toPaisa(remaining) <= 0) continue;
         await tx.duePayment.create({
-          data: { userId: user.id, dueId: due.id, amount: remaining, date: today, note: "Settled in full" },
+          data: { userId: user.id, dueId: due.id, amount: remaining, date: today, note: "Settled in full", walletId: wallet },
         });
         await tx.due.update({ where: { id: due.id }, data: { paidAmount: due.amount } });
         total += remaining;
@@ -102,6 +117,8 @@ export async function createDue(input: ManualDueValues): Promise<ActionResult> {
     if (!friend) return { ok: false, error: "Choose a person first.", fieldErrors: { friendId: ["Choose a person"] } };
 
     const amount = roundMoney(Number(parsed.data.amount));
+    // Only money I paid out leaves a wallet; when they paid for me nothing moves yet.
+    const walletId = parsed.data.direction === "OWED_TO_ME" ? await ownWallet(user.id, parsed.data.walletId) : null;
     await db.due.create({
       data: {
         userId: user.id,
@@ -111,6 +128,8 @@ export async function createDue(input: ManualDueValues): Promise<ActionResult> {
         amount,
         description: parsed.data.description,
         date: dateInputToUTC(parsed.data.date),
+        walletId,
+        dueDate: parsed.data.dueDate ? dateInputToUTC(parsed.data.dueDate) : null,
       },
     });
     revalidateAll();
@@ -123,6 +142,7 @@ export async function createDue(input: ManualDueValues): Promise<ActionResult> {
           : `You owe ${friend.name} ${formatCurrency(amount)}`,
     };
   } catch (error) {
+    if (error instanceof DueError) return { ok: false, error: error.message, fieldErrors: { walletId: [error.message] } };
     console.error("create due failed", error);
     return { ok: false, error: "Couldn't save this due. Please try again." };
   }
@@ -172,5 +192,25 @@ export async function deletePayment(paymentId: string): Promise<ActionResult> {
     if (error instanceof DueError) return { ok: false, error: error.message };
     console.error("delete payment failed", error);
     return { ok: false, error: "Couldn't remove the payment." };
+  }
+}
+
+/** Sets or clears a due's "pay back by" date ("" clears it). */
+export async function setDueDate(dueId: string, date: string): Promise<ActionResult> {
+  const idResult = objectIdSchema.safeParse(dueId);
+  if (!idResult.success) return { ok: false, error: "Invalid due." };
+  if (date && !isValidDateInput(date)) return { ok: false, error: "Enter a valid date." };
+  const user = await requireUser();
+  try {
+    const res = await db.due.updateMany({
+      where: { id: idResult.data, userId: user.id },
+      data: { dueDate: date ? dateInputToUTC(date) : null },
+    });
+    if (res.count === 0) return { ok: false, error: "This due no longer exists." };
+    revalidateAll();
+    return { ok: true, data: undefined, message: date ? `Pay back by ${formatExpenseDate(date)}` : "Due date removed" };
+  } catch (error) {
+    console.error("set due date failed", error);
+    return { ok: false, error: "Couldn't update the date." };
   }
 }

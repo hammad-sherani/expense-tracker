@@ -1,14 +1,19 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { DEFAULT_CATEGORIES, UNCATEGORIZED } from "@/lib/category-icons";
 import { PAGE_SIZE, type SortValue } from "@/lib/constants";
 import { type Period, periodRange, toDateInput } from "@/lib/dates";
 import { roundMoney } from "@/lib/format";
 import type { ExpenseListParams } from "@/lib/validations/expense";
-import type { ExpenseDTO, ExpenseListResult } from "@/types";
+import type { WalletTypeValue } from "@/lib/wallets";
+import type { CategoryDTO, ExpenseDTO, ExpenseListResult, WalletRef } from "@/types";
 
 /** Relations needed to describe a split expense. Pass to every expense read that becomes a DTO. */
 export const expenseInclude = {
+  category: { select: { id: true, name: true, icon: true, color: true, archivedAt: true } },
+  wallet: { select: { id: true, name: true, type: true, color: true } },
+  group: { select: { id: true, name: true, emoji: true } },
   paidByFriend: { select: { id: true, name: true } },
   dues: {
     select: {
@@ -16,6 +21,7 @@ export const expenseInclude = {
       direction: true,
       amount: true,
       paidAmount: true,
+      dueDate: true,
       friend: { select: { id: true, name: true } },
     },
     orderBy: { createdAt: "asc" },
@@ -24,13 +30,36 @@ export const expenseInclude = {
 
 export type ExpenseWithSplit = Prisma.ExpenseGetPayload<{ include: typeof expenseInclude }>;
 
+type CategoryRow = { id: string; name: string; icon: string; color: string; archivedAt: Date | null };
+
+/** The expense's category, or the v1 fixed category for rows not yet upgraded. */
+export function toCategoryDTO(category: CategoryRow | null, legacy?: string | null): CategoryDTO {
+  if (category) {
+    return { id: category.id, name: category.name, icon: category.icon, color: category.color, archived: Boolean(category.archivedAt) };
+  }
+  const old = legacy ? DEFAULT_CATEGORIES.find((c) => c.legacy === legacy) : undefined;
+  return old
+    ? { id: "", name: old.name, icon: old.icon, color: old.color, archived: false }
+    : { ...UNCATEGORIZED, archived: false };
+}
+
+function firstDueDate(dues: { dueDate: Date | null }[]) {
+  const d = dues.find((x) => x.dueDate)?.dueDate;
+  return d ? toDateInput(d) : null;
+}
+
+export function toWalletRef(wallet: { id: string; name: string; type: string; color: string } | null): WalletRef | null {
+  return wallet ? { ...wallet, type: wallet.type as WalletTypeValue } : null;
+}
+
 export function toExpenseDTO(expense: ExpenseWithSplit): ExpenseDTO {
   return {
     id: expense.id,
     amount: expense.amount,
     description: expense.description,
     date: toDateInput(expense.date),
-    category: expense.category,
+    category: toCategoryDTO(expense.category, expense.legacyCategory),
+    wallet: toWalletRef(expense.wallet),
     paymentMethod: expense.paymentMethod,
     notes: expense.notes,
     split:
@@ -46,7 +75,10 @@ export function toExpenseDTO(expense: ExpenseWithSplit): ExpenseDTO {
               share: d.amount,
               paidAmount: d.paidAmount,
             })),
+            shares: (expense.shares ?? []).map((s) => ({ friendId: s.friendId ?? null, amount: s.amount })),
+            dueDate: firstDueDate(expense.dues),
           },
+    group: expense.group ? { id: expense.group.id, name: expense.group.name, emoji: expense.group.emoji } : null,
     createdAt: expense.createdAt.toISOString(),
     updatedAt: expense.updatedAt.toISOString(),
   };
@@ -64,12 +96,13 @@ function escapeRegex(value: string) {
 function listWhere(
   userId: string,
   period: Period,
-  params: Pick<ExpenseListParams, "q" | "category">,
+  params: Pick<ExpenseListParams, "q" | "category" | "wallet">,
 ): Prisma.ExpenseWhereInput {
   return {
     userId,
     ...periodWhere(period),
-    ...(params.category ? { category: params.category } : {}),
+    ...(params.category ? { categoryId: params.category } : {}),
+    ...(params.wallet ? { walletId: params.wallet } : {}),
     // Prisma's MongoDB connector turns `contains` into a $regex without escaping,
     // so escape the user's text to search for it literally.
     ...(params.q ? { description: { contains: escapeRegex(params.q), mode: "insensitive" } } : {}),

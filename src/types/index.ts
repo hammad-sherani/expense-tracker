@@ -1,6 +1,22 @@
-import type { CategoryValue, PaymentMethodValue } from "@/lib/constants";
+import type { PaymentMethodValue } from "@/lib/constants";
+import type { IncomeTypeValue, WalletTypeValue } from "@/lib/wallets";
 
 export type FriendDTO = { id: string; name: string };
+
+export type CategoryDTO = { id: string; name: string; icon: string; color: string; archived: boolean };
+
+export type WalletDTO = {
+  id: string;
+  name: string;
+  type: WalletTypeValue;
+  color: string;
+  openingBalance: number;
+  balance: number;
+  archived: boolean;
+};
+
+/** Wallet as shown on an expense/income row. */
+export type WalletRef = { id: string; name: string; type: WalletTypeValue; color: string };
 
 export type DueDirectionValue = "OWED_TO_ME" | "I_OWE";
 
@@ -18,7 +34,13 @@ export type ExpenseSplitDTO = {
     share: number;
     paidAmount: number;
   }[];
+  /** Everyone's share (friendId null = me), when recorded. Includes friends who aren't owed anything by me. */
+  shares: { friendId: string | null; amount: number }[];
+  /** "Pay back by" date of its dues, "YYYY-MM-DD". */
+  dueDate: string | null;
 };
+
+export type GroupRef = { id: string; name: string; emoji: string | null };
 
 /** Serializable expense passed from the server to client components. */
 export type ExpenseDTO = {
@@ -27,10 +49,14 @@ export type ExpenseDTO = {
   description: string;
   /** Calendar day as "YYYY-MM-DD". */
   date: string;
-  category: CategoryValue;
+  /** "Uncategorized" (id "") when the category was deleted. */
+  category: CategoryDTO;
+  wallet: WalletRef | null;
+  /** v1 payment method, only for old expenses without a wallet. */
   paymentMethod: PaymentMethodValue | null;
   notes: string | null;
   split: ExpenseSplitDTO | null;
+  group: GroupRef | null;
   /** ISO timestamps */
   createdAt: string;
   updatedAt: string;
@@ -50,6 +76,10 @@ export type DueDTO = {
   amount: number;
   paidAmount: number;
   remaining: number;
+  /** "Pay back by" date, "YYYY-MM-DD". */
+  dueDate: string | null;
+  /** Still pending after its due date. */
+  overdue: boolean;
   createdAt: string;
   expense: { id: string; description: string; date: string; splitTotal: number | null } | null;
   payments: DuePaymentDTO[];
@@ -59,13 +89,14 @@ export type FriendDuesDTO = {
   friend: FriendDTO;
   /** Pending total for the selected direction. */
   remaining: number;
+  overdueCount: number;
   dues: DueDTO[];
 };
 
-export type DuesSummary = { owedToMe: number; iOwe: number; net: number; friendsOwing: number };
+export type DuesSummary = { owedToMe: number; iOwe: number; net: number; friendsOwing: number; overdue: number };
 
 export type ActionResult<T = undefined> =
-  | { ok: true; data: T; message?: string }
+  | { ok: true; data: T; message?: string; warnings?: string[] }
   | { ok: false; error: string; fieldErrors?: Record<string, string[] | undefined> };
 
 export type SummaryCard = {
@@ -83,12 +114,14 @@ export type TrendPoint = {
   label: string;
   fullLabel: string;
   total: number;
+  /** Income recorded that month. */
+  income: number;
   isSelected: boolean;
 };
 export type DailyPoint = { day: number; label: string; total: number };
 export type ComparisonPoint = { day: number; current: number | null; previous: number | null };
 export type CategorySlice = {
-  category: CategoryValue;
+  category: CategoryDTO;
   total: number;
   count: number;
   percent: number;
@@ -122,4 +155,25 @@ export type ExpenseListResult = {
   /** Sum of amounts for the whole period (ignores search/category). */
   periodSum: number;
   periodCount: number;
+};
+
+export type IncomeDTO = {
+  id: string;
+  amount: number;
+  source: string;
+  type: IncomeTypeValue;
+  wallet: WalletRef | null;
+  /** Calendar day "YYYY-MM-DD". */
+  date: string;
+  notes: string | null;
+  createdAt: string;
+};
+
+export type IncomeListResult = {
+  items: IncomeDTO[];
+  total: number;
+  page: number;
+  pageCount: number;
+  filteredSum: number;
+  periodSum: number;
 };

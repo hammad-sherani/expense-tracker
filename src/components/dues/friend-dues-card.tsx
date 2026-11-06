@@ -3,6 +3,7 @@
 import { BadgeCheck, ChevronDown, HandCoins, Loader2, Trash2, Undo2 } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
+import { DueDateButton } from "@/components/dues/due-date-button";
 import { PaymentDialog } from "@/components/dues/payment-dialog";
 import {
   AlertDialog,
@@ -22,6 +23,7 @@ import { formatExpenseDate } from "@/lib/dates";
 import { formatCurrency } from "@/lib/format";
 import { initials } from "@/lib/initials";
 import { cn } from "@/lib/utils";
+import { WalletSelect } from "@/components/wallets/wallet-select";
 import { deleteDue, deletePayment, settleFriend } from "@/server/actions/dues";
 import type { DueDTO, FriendDuesDTO } from "@/types";
 
@@ -50,6 +52,11 @@ function DueRow({ due, friendName }: { due: DueDTO; friendName: string }) {
             {due.expense?.splitTotal ? ` · bill ${formatCurrency(due.expense.splitTotal)} · share ` : " · "}
             {formatCurrency(due.amount)}
           </p>
+          {!settled && (
+            <div className="-ml-1 mt-0.5">
+              <DueDateButton due={due} />
+            </div>
+          )}
         </div>
         <div className="text-right">
           {settled ? (
@@ -158,12 +165,13 @@ export function FriendDuesCard({ group, direction }: { group: FriendDuesDTO; dir
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [isSettling, startSettle] = useTransition();
+  const [walletId, setWalletId] = useState("");
   const owedToMe = direction === "OWED_TO_ME";
   const name = group.friend.name;
 
   const settle = () =>
     startSettle(async () => {
-      const result = await settleFriend(group.friend.id, direction);
+      const result = await settleFriend(group.friend.id, direction, walletId || undefined);
       if (result.ok) toast.success(result.message);
       else toast.error(result.error);
       setConfirming(false);
@@ -177,6 +185,13 @@ export function FriendDuesCard({ group, direction }: { group: FriendDuesDTO; dir
             <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">{initials(name)}</AvatarFallback>
           </Avatar>
           <p className="min-w-0 flex-1 truncate text-sm">
+            {group.overdueCount > 0 && (
+              <span
+                className="mr-1.5 inline-block size-2 rounded-full bg-destructive align-middle"
+                title={`${group.overdueCount} overdue`}
+                aria-label={`${group.overdueCount} overdue`}
+              />
+            )}
             <span className="font-medium">{name}</span>
             <span className="text-muted-foreground">
               {" · "}
@@ -230,6 +245,13 @@ export function FriendDuesCard({ group, direction }: { group: FriendDuesDTO; dir
                 : `This records that you paid ${name} ${formatCurrency(group.remaining)} today, clearing every pending bill.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="flex flex-col gap-2">
+            <label htmlFor={`settle-wallet-${group.friend.id}`} className="text-sm font-medium">
+              {owedToMe ? "Received in" : "Paid from"}{" "}
+              <span className="font-normal text-muted-foreground">(optional)</span>
+            </label>
+            <WalletSelect id={`settle-wallet-${group.friend.id}`} value={walletId} onChange={setWalletId} />
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isSettling}>Cancel</AlertDialogCancel>
             <AlertDialogAction

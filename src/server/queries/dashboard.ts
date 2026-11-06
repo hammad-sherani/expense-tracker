@@ -1,6 +1,5 @@
 import "server-only";
 import { db } from "@/lib/db";
-import { CATEGORIES, type CategoryValue } from "@/lib/constants";
 import {
   addDays,
   currentYearMonth,
@@ -13,11 +12,12 @@ import {
   periodLabel,
   shiftMonth,
   todayUTC,
-  yearRange,
 } from "@/lib/dates";
 import { percentChange, roundMoney } from "@/lib/format";
-import { expenseInclude, periodWhere, toExpenseDTO } from "@/server/queries/expenses";
+import { expenseInclude, periodWhere, toCategoryDTO, toExpenseDTO } from "@/server/queries/expenses";
+import { incomeByMonth } from "@/server/queries/income";
 import type {
+  CategoryDTO,
   CategorySlice,
   ComparisonPoint,
   DailyPoint,
@@ -26,7 +26,24 @@ import type {
   TrendPoint,
 } from "@/types";
 
-type Row = { amount: number; date: Date; category: CategoryValue };
+type Row = { amount: number; date: Date; categoryId: string | null; legacyCategory: string | null };
+type CategoryLookup = Map<string, CategoryDTO>;
+
+/** Slice key: the category id, or the v1 category for expenses not yet upgraded. */
+const sliceKey = (r: { categoryId: string | null; legacyCategory: string | null }) =>
+  r.categoryId ?? `legacy:${r.legacyCategory ?? ""}`;
+
+function sliceCategory(key: string, lookup: CategoryLookup): CategoryDTO {
+  return lookup.get(key) ?? toCategoryDTO(null, key.startsWith("legacy:") ? key.slice(7) : null);
+}
+
+async function categoryLookup(userId: string): Promise<CategoryLookup> {
+  const rows = await db.category.findMany({
+    where: { userId },
+    select: { id: true, name: true, icon: true, color: true, archivedAt: true },
+  });
+  return new Map(rows.map((c) => [c.id, toCategoryDTO(c)]));
+}
 
 const monthKey = (year: number, month: number) => `${year}-${String(month).padStart(2, "0")}`;
 const rowMonthKey = (d: Date) => monthKey(d.getUTCFullYear(), d.getUTCMonth() + 1);
@@ -40,7 +57,13 @@ function inMonth(rows: Row[], year: number, month: number) {
   return rows.filter((r) => rowMonthKey(r.date) === key);
 }
 
-function buildTrend(rows: Row[], endYear: number, endMonth: number, selected: boolean): TrendPoint[] {
+function buildTrend(
+  rows: Row[],
+  income: Map<string, number>,
+  endYear: number,
+  endMonth: number,
+  selected: boolean,
+): TrendPoint[] {
   const totals = new Map<string, number>();
   for (const r of rows) {
     const key = rowMonthKey(r.date);
@@ -54,6 +77,7 @@ function buildTrend(rows: Row[], endYear: number, endMonth: number, selected: bo
       label: monthLabel(year, month, true).slice(0, 3),
       fullLabel: monthLabel(year, month),
       total: roundMoney(totals.get(key) ?? 0),
+      income: roundMoney(income.get(key) ?? 0),
       isSelected: selected && i === 11,
     };
   });
@@ -130,31 +154,46 @@ function buildComparison(rows: Row[], year: number, month: number) {
   };
 }
 
-function buildSlices(totals: Map<CategoryValue, { total: number; count: number }>) {
+function buildSlices(totals: Map<string, { total: number; count: number }>, lookup: CategoryLookup) {
   const grand = roundMoney([...totals.values()].reduce((a, b) => a + b.total, 0));
-  const slices: CategorySlice[] = CATEGORIES.filter((c) => (totals.get(c)?.count ?? 0) > 0)
-    .map((category) => {
-      const { total, count } = totals.get(category)!;
-      return {
-        category,
-        total: roundMoney(total),
-        count,
-        percent: grand > 0 ? (total / grand) * 100 : 0,
-      };
-    })
+  // Merge keys that resolve to the same category (e.g. "Uncategorized").
+  const merged = new Map<string, CategorySlice>();
+  for (const [key, { total, count }] of totals) {
+    if (count === 0) continue;
+    const category = sliceCategory(key, lookup);
+    const id = category.id || `name:${category.name}`;
+    const prev = merged.get(id);
+    merged.set(id, { category, total: (prev?.total ?? 0) + total, count: (prev?.count ?? 0) + count, percent: 0 });
+  }
+  const slices = [...merged.values()]
+    .map((s) => ({ ...s, total: roundMoney(s.total), percent: grand > 0 ? (s.total / grand) * 100 : 0 }))
     .sort((a, b) => b.total - a.total);
   return { total: grand, slices };
 }
 
-function slicesFromRows(rows: Row[]) {
-  const totals = new Map<CategoryValue, { total: number; count: number }>();
+function slicesFromRows(rows: Row[], lookup: CategoryLookup) {
+  const totals = new Map<string, { total: number; count: number }>();
   for (const r of rows) {
-    const t = totals.get(r.category) ?? { total: 0, count: 0 };
+    const key = sliceKey(r);
+    const t = totals.get(key) ?? { total: 0, count: 0 };
     t.total += r.amount;
     t.count += 1;
-    totals.set(r.category, t);
+    totals.set(key, t);
   }
-  return buildSlices(totals);
+  return buildSlices(totals, lookup);
+}
+
+function savingsCards(income: number, spent: number, incomeHint: string): SummaryCard[] {
+  const saved = roundMoney(income - spent);
+  return [
+    { key: "income", label: "Income", value: income, hint: incomeHint },
+    {
+      key: "saved",
+      label: saved >= 0 ? "Saved" : "Overspent",
+      value: Math.abs(saved),
+      hint: income > 0 ? `${((saved / income) * 100).toFixed(1)}% savings rate` : "Add income to see savings",
+    },
+  ];
 }
 
 async function sumBetween(userId: string, start: Date, end: Date) {
@@ -168,7 +207,7 @@ async function sumBetween(userId: string, start: Date, end: Date) {
 async function fetchRows(userId: string, start: Date, end: Date): Promise<Row[]> {
   return db.expense.findMany({
     where: { userId, date: { gte: start, lt: end } },
-    select: { amount: true, date: true, category: true },
+    select: { amount: true, date: true, categoryId: true, legacyCategory: true },
   });
 }
 
@@ -199,14 +238,15 @@ async function getMonthDashboard(userId: string, period: Extract<Period, { kind:
   // comparison and category charts with a single query.
   const windowStart = monthRange(shiftMonth(year, month, -11).year, shiftMonth(year, month, -11).month).start;
   const windowEnd = monthRange(year, month).end;
-  const yr = yearRange(year);
 
-  const [rows, yearTotal, todayTotal, recent] = await Promise.all([
+  const [rows, todayTotal, recent, lookup, income] = await Promise.all([
     fetchRows(userId, windowStart, windowEnd),
-    sumBetween(userId, yr.start, yr.end),
     sumBetween(userId, today, addDays(today, 1)),
     fetchRecent(userId, period),
+    categoryLookup(userId),
+    incomeByMonth(userId, windowStart, windowEnd),
   ]);
+  const monthIncome = roundMoney(income.get(monthKey(year, month)) ?? 0);
 
   const monthRows = inMonth(rows, year, month);
   const monthTotal = sum(monthRows);
@@ -223,18 +263,7 @@ async function getMonthDashboard(userId: string, period: Extract<Period, { kind:
       change: percentChange(monthTotal, prevTotal),
       changeLabel: `vs ${monthLabel(prev.year, prev.month, true)}`,
     },
-    {
-      key: "previous",
-      label: isCurrent ? "Last Month" : "Previous Month",
-      value: prevTotal,
-      hint: monthLabel(prev.year, prev.month),
-    },
-    {
-      key: "year",
-      label: now.year === year ? "This Year" : `Year ${year}`,
-      value: yearTotal,
-      hint: `Jan – Dec ${year}`,
-    },
+    ...savingsCards(monthIncome, monthTotal, monthLabel(year, month)),
     {
       key: "today",
       label: "Today",
@@ -252,10 +281,10 @@ async function getMonthDashboard(userId: string, period: Extract<Period, { kind:
   return {
     periodLabel: monthLabel(year, month),
     cards,
-    trend: buildTrend(rows, year, month, true),
+    trend: buildTrend(rows, income, year, month, true),
     daily: { title: `Daily spending · ${monthLabel(year, month)}`, points: buildDailyForMonth(rows, year, month) },
     comparison: buildComparison(rows, year, month),
-    categories: slicesFromRows(monthRows),
+    categories: slicesFromRows(monthRows, lookup),
     recent,
     expenseCount: monthRows.length,
   };
@@ -268,26 +297,35 @@ async function getAllTimeDashboard(userId: string): Promise<DashboardData> {
   const start = shiftMonth(year, month, -11);
   const windowStart = monthRange(start.year, start.month).start;
   const windowEnd = addDays(today, 1) > monthRange(year, month).end ? addDays(today, 1) : monthRange(year, month).end;
-  const yr = yearRange(year);
 
-  const [rows, allAgg, grouped, yearTotal, recent] = await Promise.all([
+  const [rows, allAgg, grouped, recent, lookup, income, incomeAll] = await Promise.all([
     fetchRows(userId, windowStart, windowEnd),
     db.expense.aggregate({ where: { userId }, _sum: { amount: true }, _count: { _all: true }, _min: { date: true } }),
-    db.expense.groupBy({ by: ["category"], where: { userId }, _sum: { amount: true }, _count: { _all: true } }),
-    sumBetween(userId, yr.start, yr.end),
+    db.expense.groupBy({
+      by: ["categoryId", "legacyCategory"],
+      where: { userId },
+      _sum: { amount: true },
+      _count: { _all: true },
+    }),
     fetchRecent(userId, { kind: "all" }),
+    categoryLookup(userId),
+    incomeByMonth(userId, windowStart, windowEnd),
+    db.income.aggregate({ where: { userId }, _sum: { amount: true } }),
   ]);
 
   const allTotal = roundMoney(allAgg._sum.amount ?? 0);
   const count = allAgg._count._all;
   const monthTotal = sum(inMonth(rows, year, month));
   const prevTotal = sum(inMonth(rows, prev.year, prev.month));
-  const todayTotal = sum(rows.filter((r) => r.date.getTime() === today.getTime()));
   const firstDate = allAgg._min.date;
   const spanDays = firstDate ? Math.max(1, diffInDays(firstDate, today) + 1) : 1;
 
-  const totals = new Map<CategoryValue, { total: number; count: number }>();
-  for (const g of grouped) totals.set(g.category, { total: g._sum.amount ?? 0, count: g._count._all });
+  const totals = new Map<string, { total: number; count: number }>();
+  for (const g of grouped) {
+    const key = sliceKey(g);
+    const t = totals.get(key) ?? { total: 0, count: 0 };
+    totals.set(key, { total: t.total + (g._sum?.amount ?? 0), count: t.count + (g._count as { _all: number })._all });
+  }
 
   const last30Start = addDays(today, -29);
 
@@ -306,13 +344,7 @@ async function getAllTimeDashboard(userId: string): Promise<DashboardData> {
       change: percentChange(monthTotal, prevTotal),
       changeLabel: `vs ${monthLabel(prev.year, prev.month, true)}`,
     },
-    { key: "year", label: "This Year", value: yearTotal, hint: `Jan – Dec ${year}` },
-    {
-      key: "today",
-      label: "Today",
-      value: todayTotal,
-      hint: formatExpenseDate(today, { weekday: "long", day: "numeric", month: "short" }),
-    },
+    ...savingsCards(roundMoney(incomeAll._sum.amount ?? 0), allTotal, "All time"),
     {
       key: "avg",
       label: "Avg. Daily Spending",
@@ -324,10 +356,10 @@ async function getAllTimeDashboard(userId: string): Promise<DashboardData> {
   return {
     periodLabel: periodLabel({ kind: "all" }),
     cards,
-    trend: buildTrend(rows, year, month, false),
+    trend: buildTrend(rows, income, year, month, false),
     daily: { title: "Daily spending · Last 30 days", points: buildDailyRange(rows, last30Start, 30) },
     comparison: buildComparison(rows, year, month),
-    categories: buildSlices(totals),
+    categories: buildSlices(totals, lookup),
     recent,
     expenseCount: count,
   };

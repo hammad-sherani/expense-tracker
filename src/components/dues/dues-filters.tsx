@@ -35,7 +35,7 @@ function Segmented<T extends string>({
   );
 }
 
-export function DuesFilters({ dir, status }: { dir: "owed" | "owe"; status: "pending" | "settled" | "all" }) {
+export function DuesFilters({ dir, status }: { dir: "owed" | "owe"; status: "pending" | "overdue" | "settled" | "all" }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { navigate } = useNavigationTransition();
@@ -65,6 +65,7 @@ export function DuesFilters({ dir, status }: { dir: "owed" | "owe"; status: "pen
         onChange={(v) => set("status", v, "pending")}
         options={[
           { value: "pending", label: "Pending" },
+          { value: "overdue", label: "Overdue" },
           { value: "settled", label: "Settled" },
           { value: "all", label: "All" },
         ]}

@@ -70,7 +70,8 @@ async function DuesView({ searchParams }: { searchParams: PageProps<"/dues">["se
   const sp = await searchParams;
   const dir = first(sp.dir) === "owe" ? "owe" : "owed";
   const rawStatus = first(sp.status);
-  const status: DueStatusFilter = rawStatus === "settled" || rawStatus === "all" ? rawStatus : "pending";
+  const status: DueStatusFilter =
+    rawStatus === "settled" || rawStatus === "all" || rawStatus === "overdue" ? rawStatus : "pending";
   const direction = dir === "owe" ? "I_OWE" : "OWED_TO_ME";
 
   const [summary, groups, friends] = await Promise.all([
@@ -102,7 +103,8 @@ async function DuesView({ searchParams }: { searchParams: PageProps<"/dues">["se
             value={summary.owedToMe}
             hint={
               summary.friendsOwing
-                ? `${summary.friendsOwing} ${summary.friendsOwing === 1 ? "person" : "people"} to collect from`
+                ? `${summary.friendsOwing} ${summary.friendsOwing === 1 ? "person" : "people"} to collect from` +
+                  (summary.overdue ? ` · ${summary.overdue} overdue` : "")
                 : "Nobody owes you right now"
             }
             tone="positive"
@@ -130,11 +132,13 @@ async function DuesView({ searchParams }: { searchParams: PageProps<"/dues">["se
             <EmptyState
               icon={HandCoins}
               title={
-                status === "pending"
-                  ? dir === "owed"
-                    ? "Nobody owes you anything"
-                    : "You don't owe anyone"
-                  : "Nothing here yet"
+                status === "overdue"
+                  ? "Nothing overdue"
+                  : status === "pending"
+                    ? dir === "owed"
+                      ? "Nobody owes you anything"
+                      : "You don't owe anyone"
+                    : "Nothing here yet"
               }
               description="Split a bill when adding an expense, or use “Add due” for something you paid fully for someone else."
             />

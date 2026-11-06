@@ -26,7 +26,7 @@ export function ThemeToggle() {
 
 export function AppHeader({ variant, userMenu }: { variant: NavVariant; userMenu?: React.ReactNode }) {
   const [open, setOpen] = useState(false);
-  const home = variant === "admin" ? "/admin/users" : "/";
+  const home = variant === "admin" ? "/admin" : "/";
   const subtitle = variant === "admin" ? "Admin console" : undefined;
 
   return (

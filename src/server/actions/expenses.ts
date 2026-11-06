@@ -2,6 +2,8 @@
 
 import { Prisma } from "@prisma/client";
 import { refresh, revalidatePath } from "next/cache";
+import { nextOccurrence } from "@/lib/recurrence";
+import { checkBudgetAlerts } from "@/server/budgets";
 import { requireUser } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
 import { dateInputToUTC } from "@/lib/dates";
@@ -25,15 +27,23 @@ function toPlan(values: ExpenseFormValues) {
   const base = {
     description: values.description,
     date: dateInputToUTC(values.date),
-    category: values.category,
-    paymentMethod: values.paymentMethod === "" ? null : values.paymentMethod,
+    categoryId: values.categoryId,
+    walletId: values.walletId === "" ? null : values.walletId,
+    groupId: values.groupId === "" ? null : values.groupId,
     notes: values.notes === "" ? null : values.notes,
   };
 
   if (!values.split.enabled) {
     return {
-      data: { ...base, amount: roundMoney(Number(values.amount)), splitTotal: null, paidByFriendId: null },
+      data: {
+        ...base,
+        amount: roundMoney(Number(values.amount)),
+        splitTotal: null,
+        paidByFriendId: null,
+        shares: [] as { friendId: string | null; amount: number }[],
+      },
       dues: [] as PlannedDue[],
+      dueDate: null,
     };
   }
 
@@ -49,13 +59,41 @@ function toPlan(values: ExpenseFormValues) {
       amount: roundMoney(plan.expenseAmount),
       splitTotal: roundMoney(plan.splitTotal),
       paidByFriendId: plan.paidByFriendId,
+      // Everyone's share, so groups can work out who owes whom (even between friends).
+      shares: [
+        { friendId: null, amount: roundMoney(Number(values.split.myShare)) },
+        ...values.split.participants.map((p) => ({ friendId: p.friendId, amount: roundMoney(Number(p.share)) })),
+      ],
     },
     dues: plan.dues.map((d) => ({ ...d, amount: roundMoney(d.amount) })),
+    dueDate: values.split.dueDate ? dateInputToUTC(values.split.dueDate) : null,
   };
+}
+
+class FieldConflict extends Error {
+  constructor(
+    public field: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/** The category, wallet and group must belong to the signed-in user. */
+async function assertOwnRefs(tx: Tx, userId: string, values: ExpenseFormValues) {
+  const [category, wallet, group] = await Promise.all([
+    tx.category.findFirst({ where: { id: values.categoryId, userId }, select: { id: true } }),
+    values.walletId ? tx.wallet.findFirst({ where: { id: values.walletId, userId }, select: { id: true } }) : true,
+    values.groupId ? tx.group.findFirst({ where: { id: values.groupId, userId }, select: { id: true } }) : true,
+  ]);
+  if (!category) throw new FieldConflict("categoryId", "This category no longer exists. Please pick another.");
+  if (!wallet) throw new FieldConflict("walletId", "This wallet no longer exists. Please pick another.");
+  if (!group) throw new FieldConflict("groupId", "This group no longer exists.");
 }
 
 /** Every friend in the split must belong to the signed-in user. */
 async function assertOwnFriends(tx: Tx, userId: string, values: ExpenseFormValues) {
+  await assertOwnRefs(tx, userId, values);
   if (!values.split.enabled) return;
   const ids = [...new Set(values.split.participants.map((p) => p.friendId))];
   const count = await tx.friend.count({ where: { userId, id: { in: ids } } });
@@ -66,7 +104,7 @@ async function assertOwnFriends(tx: Tx, userId: string, values: ExpenseFormValue
  * Brings an expense's dues in line with the planned split while keeping
  * repayments that were already recorded.
  */
-async function syncDues(tx: Tx, userId: string, expenseId: string, planned: PlannedDue[]) {
+async function syncDues(tx: Tx, userId: string, expenseId: string, planned: PlannedDue[], dueDate: Date | null) {
   const existing = await tx.due.findMany({
     where: { userId, expenseId },
     include: { friend: { select: { name: true } } },
@@ -82,8 +120,8 @@ async function syncDues(tx: Tx, userId: string, expenseId: string, planned: Plan
           `${due.friend.name} has already paid ${formatCurrency(due.paidAmount)}, so their share can't be less than that.`,
         );
       }
-      if (toPaisa(next.amount) !== toPaisa(due.amount)) {
-        await tx.due.update({ where: { id: due.id }, data: { amount: next.amount } });
+      if (toPaisa(next.amount) !== toPaisa(due.amount) || due.dueDate?.getTime() !== dueDate?.getTime()) {
+        await tx.due.update({ where: { id: due.id }, data: { amount: next.amount, dueDate } });
       }
       plannedByKey.delete(key(due.friendId, due.direction));
     } else {
@@ -104,6 +142,7 @@ async function syncDues(tx: Tx, userId: string, expenseId: string, planned: Plan
         friendId: d.friendId,
         direction: d.direction,
         amount: d.amount,
+        dueDate,
       })),
     });
   }
@@ -116,6 +155,9 @@ function revalidateAll() {
 }
 
 function failure(error: unknown, fallback: string): ActionResult<never> {
+  if (error instanceof FieldConflict) {
+    return { ok: false, error: error.message, fieldErrors: { [error.field]: [error.message] } };
+  }
   if (error instanceof SplitConflict) {
     return { ok: false, error: error.message, fieldErrors: { "split.participants": [error.message] } };
   }
@@ -133,9 +175,17 @@ function invalid(error: import("zod").ZodError): ActionResult<never> {
   return { ok: false, error: "Please fix the highlighted fields.", fieldErrors: issuesToFieldErrors(error) };
 }
 
-export async function createExpense(input: ExpenseFormValues): Promise<ActionResult<ExpenseDTO>> {
+/**
+ * Adds an expense. With `recurringId`, it pays that recurring bill: the expense is
+ * linked to it and the bill moves on to its next due date.
+ */
+export async function createExpense(
+  input: ExpenseFormValues,
+  options: { recurringId?: string } = {},
+): Promise<ActionResult<ExpenseDTO>> {
   const parsed = expenseFormSchema.safeParse(input);
   if (!parsed.success) return invalid(parsed.error);
+  const recurringId = options.recurringId && objectIdSchema.safeParse(options.recurringId).success ? options.recurringId : null;
 
   const user = await requireUser();
   const plan = toPlan(parsed.data);
@@ -143,12 +193,20 @@ export async function createExpense(input: ExpenseFormValues): Promise<ActionRes
   try {
     const expense = await db.$transaction(async (tx) => {
       await assertOwnFriends(tx, user.id, parsed.data);
-      const created = await tx.expense.create({ data: { ...plan.data, userId: user.id } });
-      await syncDues(tx, user.id, created.id, plan.dues);
+      const created = await tx.expense.create({ data: { ...plan.data, userId: user.id, recurringId } });
+      await syncDues(tx, user.id, created.id, plan.dues, plan.dueDate);
+      if (recurringId) {
+        const rule = await tx.recurringExpense.findFirst({ where: { id: recurringId, userId: user.id } });
+        if (!rule) throw new FieldConflict("_form", "This recurring bill no longer exists.");
+        const next = nextOccurrence(rule.startDate, rule.frequency, rule.interval, rule.nextDate);
+        const finished = rule.endDate !== null && next.getTime() > rule.endDate.getTime();
+        await tx.recurringExpense.update({ where: { id: rule.id }, data: { nextDate: next, active: finished ? false : rule.active } });
+      }
       return tx.expense.findUniqueOrThrow({ where: { id: created.id }, include: expenseInclude });
     });
+    const warnings = await checkBudgetAlerts(user, [{ categoryId: plan.data.categoryId, date: plan.data.date }]);
     revalidateAll();
-    return { ok: true, data: toExpenseDTO(expense), message: "Expense added" };
+    return { ok: true, data: toExpenseDTO(expense), message: "Expense added", warnings };
   } catch (error) {
     return failure(error, "Failed to add expense.");
   }
@@ -169,11 +227,12 @@ export async function updateExpense(id: string, input: ExpenseFormValues): Promi
       await assertOwnFriends(tx, user.id, parsed.data);
       // userId in the filter: a user can only ever change their own expenses.
       await tx.expense.update({ where: { id: idResult.data, userId: user.id }, data: plan.data });
-      await syncDues(tx, user.id, idResult.data, plan.dues);
+      await syncDues(tx, user.id, idResult.data, plan.dues, plan.dueDate);
       return tx.expense.findUniqueOrThrow({ where: { id: idResult.data }, include: expenseInclude });
     });
+    const warnings = await checkBudgetAlerts(user, [{ categoryId: plan.data.categoryId, date: plan.data.date }]);
     revalidateAll();
-    return { ok: true, data: toExpenseDTO(expense), message: "Expense updated" };
+    return { ok: true, data: toExpenseDTO(expense), message: "Expense updated", warnings };
   } catch (error) {
     return failure(error, "Failed to update expense.");
   }

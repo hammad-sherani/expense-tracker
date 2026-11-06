@@ -38,11 +38,21 @@ import { formatExpenseDate, formatTimestamp } from "@/lib/dates";
 import { formatCurrency, roundMoney } from "@/lib/format";
 import { initials } from "@/lib/initials";
 import { cn } from "@/lib/utils";
+import type { ExpenseFormValues } from "@/lib/validations/expense";
 import { deleteExpense } from "@/server/actions/expenses";
 import type { ExpenseDTO } from "@/types";
 
+/** Options for a prefilled "Add expense" dialog. */
+export type CreateOptions = {
+  defaults?: Partial<ExpenseFormValues>;
+  /** Paying a recurring bill. */
+  recurringId?: string;
+  title?: string;
+  description?: string;
+};
+
 type ExpenseUI = {
-  openCreate: () => void;
+  openCreate: (options?: CreateOptions) => void;
   openEdit: (expense: ExpenseDTO) => void;
   openDetails: (expense: ExpenseDTO) => void;
   requestDelete: (expense: ExpenseDTO) => void;
@@ -56,7 +66,7 @@ export function useExpenseUI() {
   return ctx;
 }
 
-type FormState = { open: false } | { open: true; expense?: ExpenseDTO };
+type FormState = { open: false } | { open: true; expense?: ExpenseDTO; create?: CreateOptions };
 
 /**
  * Hosts the add/edit dialog, the details sheet and the delete confirmation so
@@ -70,7 +80,7 @@ export function ExpenseUIProvider({ children }: { children: React.ReactNode }) {
 
   const api = useMemo<ExpenseUI>(
     () => ({
-      openCreate: () => setForm({ open: true }),
+      openCreate: (options) => setForm({ open: true, create: options }),
       openEdit: (expense) => setForm({ open: true, expense }),
       openDetails: (expense) => {
         setDetails(expense);
@@ -82,6 +92,7 @@ export function ExpenseUIProvider({ children }: { children: React.ReactNode }) {
   );
 
   const editing = form.open ? form.expense : undefined;
+  const create = form.open && !form.expense ? form.create : undefined;
 
   const handleSaved = useCallback(
     (saved: ExpenseDTO) => {
@@ -107,15 +118,19 @@ export function ExpenseUIProvider({ children }: { children: React.ReactNode }) {
       <Dialog open={form.open} onOpenChange={(open) => !open && setForm({ open: false })}>
         <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit expense" : "Add expense"}</DialogTitle>
+            <DialogTitle>{editing ? "Edit expense" : (create?.title ?? "Add expense")}</DialogTitle>
             <DialogDescription>
-              {editing ? "Update the details of this expense." : "Record a new expense. Fields marked * are required."}
+              {editing
+                ? "Update the details of this expense."
+                : (create?.description ?? "Record a new expense. Fields marked * are required.")}
             </DialogDescription>
           </DialogHeader>
           {form.open && (
             <ExpenseForm
-              key={editing?.id ?? "new"}
+              key={editing?.id ?? create?.recurringId ?? "new"}
               expense={editing}
+              defaults={create?.defaults}
+              recurringId={create?.recurringId}
               onSuccess={handleSaved}
               onCancel={() => setForm({ open: false })}
             />
@@ -207,13 +222,22 @@ function ExpenseDetailsSheet({
                     year: "numeric",
                   })}
                 </DetailRow>
-                <DetailRow icon={CreditCard} label="Payment method">
-                  {expense.paymentMethod ? (
+                <DetailRow icon={CreditCard} label="Wallet">
+                  {expense.wallet ? (
+                    expense.wallet.name
+                  ) : expense.paymentMethod ? (
                     PAYMENT_METHOD_LABELS[expense.paymentMethod]
                   ) : (
                     <span className="text-muted-foreground">Not specified</span>
                   )}
                 </DetailRow>
+                {expense.group && (
+                  <DetailRow icon={Users} label="Group">
+                    <Link href={`/groups/${expense.group.id}`} className="font-medium text-primary hover:underline">
+                      {`${expense.group.emoji ?? ""} ${expense.group.name}`.trim()}
+                    </Link>
+                  </DetailRow>
+                )}
                 <DetailRow icon={StickyNote} label="Notes">
                   {expense.notes ? (
                     <p className="break-words whitespace-pre-wrap">{expense.notes}</p>
@@ -334,6 +358,7 @@ function SplitDetails({ split, myShare }: { split: NonNullable<ExpenseDTO["split
       <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
         <Users className="size-4" />
         Split · {formatCurrency(split.total)} paid by {iPaid ? "you" : split.paidBy?.name}
+        {split.dueDate && <span className="ml-auto">Pay back by {formatExpenseDate(split.dueDate)}</span>}
       </div>
       <ul className="mt-3 flex flex-col gap-2.5">
         <li className="flex items-center gap-3 text-sm">

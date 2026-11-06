@@ -4,6 +4,8 @@ import {
   PENDING_COOKIE,
   PENDING_TTL_SECONDS,
   type PendingPayload,
+  RESET_COOKIE,
+  type ResetPayload,
   type Role,
   SESSION_COOKIE,
   SESSION_TTL_SECONDS,
@@ -19,8 +21,8 @@ const cookieBase = {
   path: "/",
 };
 
-export async function createSession(userId: string, role: Role) {
-  const token = await signToken({ sub: userId, role, typ: "session" }, SESSION_TTL_SECONDS);
+export async function createSession(userId: string, role: Role, sessionVersion: number | null) {
+  const token = await signToken({ sub: userId, role, sv: sessionVersion ?? 0, typ: "session" }, SESSION_TTL_SECONDS);
   const store = await cookies();
   store.set(SESSION_COOKIE, token, { ...cookieBase, maxAge: SESSION_TTL_SECONDS });
   store.delete(PENDING_COOKIE);
@@ -48,4 +50,19 @@ export async function readPendingVerification() {
 
 export async function clearPendingVerification() {
   (await cookies()).delete(PENDING_COOKIE);
+}
+
+/** Remember which account is resetting its password (sub "" = no such account). */
+export async function setPendingReset(userId: string, email: string) {
+  const token = await signToken({ sub: userId, email, typ: "reset" }, PENDING_TTL_SECONDS);
+  (await cookies()).set(RESET_COOKIE, token, { ...cookieBase, maxAge: PENDING_TTL_SECONDS });
+}
+
+export async function readPendingReset() {
+  const store = await cookies();
+  return verifyToken<ResetPayload>(store.get(RESET_COOKIE)?.value, "reset");
+}
+
+export async function clearPendingReset() {
+  (await cookies()).delete(RESET_COOKIE);
 }

@@ -1,25 +1,32 @@
 import "server-only";
 import { db } from "@/lib/db";
-import { toDateInput } from "@/lib/dates";
+import { toDateInput, todayUTC } from "@/lib/dates";
 import { roundMoney } from "@/lib/format";
 import type { DueDirectionValue, DuesSummary, FriendDuesDTO } from "@/types";
 
-export type DueStatusFilter = "pending" | "settled" | "all";
+export type DueStatusFilter = "pending" | "overdue" | "settled" | "all";
 
 const remainingOf = (d: { amount: number; paidAmount: number }) => roundMoney(Math.max(0, d.amount - d.paidAmount));
+
+/** Pending and past its "pay back by" date. */
+export const isOverdue = (d: { amount: number; paidAmount: number; dueDate: Date | null }, today = todayUTC()) =>
+  remainingOf(d) > 0 && d.dueDate !== null && d.dueDate.getTime() < today.getTime();
 
 /** Pending totals in both directions. */
 export async function getDuesSummary(userId: string): Promise<DuesSummary> {
   const dues = await db.due.findMany({
     where: { userId },
-    select: { direction: true, amount: true, paidAmount: true, friendId: true },
+    select: { direction: true, amount: true, paidAmount: true, friendId: true, dueDate: true },
   });
   let owedToMe = 0;
   let iOwe = 0;
+  let overdue = 0;
   const owing = new Set<string>();
+  const today = todayUTC();
   for (const d of dues) {
     const r = remainingOf(d);
     if (r <= 0) continue;
+    if (isOverdue(d, today)) overdue += 1;
     if (d.direction === "OWED_TO_ME") {
       owedToMe += r;
       owing.add(d.friendId);
@@ -30,6 +37,7 @@ export async function getDuesSummary(userId: string): Promise<DuesSummary> {
     iOwe: roundMoney(iOwe),
     net: roundMoney(owedToMe - iOwe),
     friendsOwing: owing.size,
+    overdue,
   };
 }
 
@@ -50,26 +58,32 @@ export async function listDuesByFriend(
   });
 
   const groups = new Map<string, FriendDuesDTO>();
+  const today = todayUTC();
   for (const d of dues) {
     const remaining = remainingOf(d);
+    const overdue = isOverdue(d, today);
     if (status === "pending" && remaining <= 0) continue;
+    if (status === "overdue" && !overdue) continue;
     if (status === "settled" && remaining > 0) continue;
 
     let group = groups.get(d.friendId);
     if (!group) {
-      group = { friend: d.friend, remaining: 0, dues: [] };
+      group = { friend: d.friend, remaining: 0, overdueCount: 0, dues: [] };
       groups.set(d.friendId, group);
     }
     group.remaining = roundMoney(group.remaining + remaining);
+    if (overdue) group.overdueCount += 1;
     group.dues.push({
       id: d.id,
       description: d.expense?.description ?? d.description ?? "Money owed",
       date: toDateInput(d.expense?.date ?? d.date ?? d.createdAt),
-      standalone: d.expenseId === null,
+      standalone: !d.expenseId,
       direction: d.direction,
       amount: d.amount,
       paidAmount: d.paidAmount,
       remaining,
+      dueDate: d.dueDate ? toDateInput(d.dueDate) : null,
+      overdue,
       createdAt: d.createdAt.toISOString(),
       expense: d.expense
         ? {

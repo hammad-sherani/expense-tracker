@@ -11,6 +11,7 @@ const STATUSES = [
   { value: "all", label: "All" },
   { value: "verified", label: "Verified" },
   { value: "pending", label: "Pending" },
+  { value: "blocked", label: "Blocked" },
 ] as const;
 
 export function UserFilters({ q, status }: { q: string; status: string }) {

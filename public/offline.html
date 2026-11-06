@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Offline · Spendwise</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        background: #14151c;
+        color: #e8e9f0;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        padding: 16px;
+        text-align: center;
+      }
+      img { width: 64px; height: 64px; border-radius: 14px; }
+      h1 { font-size: 20px; margin: 20px 0 8px; }
+      p { color: #9a9db0; margin: 0 0 24px; max-width: 320px; line-height: 1.5; }
+      button {
+        background: #4f5bd5; color: #fff; border: 0; border-radius: 8px;
+        padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/icon-192.png" alt="" />
+      <h1>You're offline</h1>
+      <p>Spendwise needs a connection to load your data. Check your internet and try again.</p>
+      <button type="button" onclick="location.reload()">Try again</button>
+    </main>
+  </body>
+</html>

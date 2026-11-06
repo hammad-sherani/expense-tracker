@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { homeFor, SESSION_COOKIE, type SessionPayload, verifyToken } from "@/lib/auth/jwt";
 
-const GUEST_ONLY = ["/login", "/signup"];
+const GUEST_ONLY = ["/login", "/signup", "/forgot-password", "/reset-password"];
 const PUBLIC = [...GUEST_ONLY, "/verify-email"];
 
 const matches = (pathname: string, routes: string[]) =>
@@ -31,5 +31,8 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Everything except API routes (they check auth themselves), Next internals and static files.
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|ico|webp)$).*)"],
+  // PWA files (service worker, manifest, offline page) must load without a session.
+  matcher: [
+    "/((?!api|_next/static|_next/image|favicon.ico|sw\\.js|manifest\\.webmanifest|offline\\.html|.*\\.(?:png|jpg|jpeg|svg|ico|webp)$).*)",
+  ],
 };

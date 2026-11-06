@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { isValidDateInput } from "@/lib/dates";
 
+/** "" = not tracked in a wallet. */
+const walletIdSchema = z.union([z.string().regex(/^[a-f\d]{24}$/i, "Choose a wallet"), z.literal("")]).optional();
+
 export const friendNameSchema = z
   .string()
   .trim()
@@ -16,6 +19,7 @@ export const paymentSchema = z.object({
     .refine((v) => Number(v) > 0, "Amount must be greater than 0"),
   date: z.string().refine(isValidDateInput, "Enter a valid date"),
   note: z.string().trim().max(200, "Note must be 200 characters or fewer"),
+  walletId: walletIdSchema,
 });
 
 export type PaymentValues = z.infer<typeof paymentSchema>;
@@ -37,6 +41,9 @@ export const manualDueSchema = z.object({
     .min(2, "Describe what it was for (at least 2 characters)")
     .max(200, "Description must be 200 characters or fewer"),
   date: z.string().refine(isValidDateInput, "Enter a valid date"),
+  walletId: walletIdSchema,
+  /** Optional "pay back by" date. */
+  dueDate: z.union([z.string().refine(isValidDateInput, "Enter a valid date"), z.literal("")]).optional(),
 });
 
 export type ManualDueValues = z.infer<typeof manualDueSchema>;

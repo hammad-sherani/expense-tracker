@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth/dal";
-import { CATEGORY_META, PAYMENT_METHOD_LABELS } from "@/lib/constants";
+import { PAYMENT_METHOD_LABELS } from "@/lib/constants";
 import { parsePeriod, periodToParam } from "@/lib/dates";
 import { parseExpenseListParams } from "@/lib/validations/expense";
 import { exportExpenses } from "@/server/queries/expenses";
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
       "Amount (PKR)",
       "Split total (PKR)",
       "Paid by",
-      "Payment Method",
+      "Wallet",
       "Notes",
       "Created At",
       "Updated At",
@@ -42,11 +42,11 @@ export async function GET(request: NextRequest) {
       [
         e.date,
         e.description,
-        CATEGORY_META[e.category].label,
+        e.category.name,
         e.amount.toFixed(2),
         e.split ? e.split.total.toFixed(2) : "",
         e.split ? (e.split.paidBy?.name ?? "Me") : "",
-        e.paymentMethod ? PAYMENT_METHOD_LABELS[e.paymentMethod] : "",
+        e.wallet ? e.wallet.name : e.paymentMethod ? PAYMENT_METHOD_LABELS[e.paymentMethod] : "",
         e.notes,
         e.createdAt,
         e.updatedAt,

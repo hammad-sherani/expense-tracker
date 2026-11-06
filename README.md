@@ -9,7 +9,17 @@ A personal finance dashboard built with Next.js 16 (App Router), TypeScript, Tai
 - **Expenses page:** search by description, filter by category, sort by date or amount, pagination, and CSV export of the current filters.
 - **Add / edit / delete:** Quick Add dialog (press **N** anywhere), a full Add Expense page, a details panel with Edit and Delete, and a confirmation before deleting. Every change shows a toast and updates the dashboard without a page reload.
 - **Split bills & dues:** turn on "Split with friends" when adding an expense. Enter the total bill, add friends (saved once, reused later), split equally or with custom amounts, and choose who paid. **Only your share counts as your expense.** If you paid, each friend gets a due for what they owe you; if a friend paid, you get a due for what you owe them. The **Dues** page shows per-friend balances (owed to you / you owe / net), records full or partial repayments with history and undo, and has a "Settle all" button. The dashboard shows a Dues summary.
-- **Accounts & roles:** sign up (username, email, password, confirm password) with **email OTP verification**, log in with email and password, log out. Two roles: **User** (their own private expense tracker) and **Admin** (only a user listing with search, a status filter and stats).
+- **Income & savings:** record salary and other income; the dashboard and Income page show income, how much you saved and your savings rate. The monthly trend shows income next to spending.
+- **Wallets:** Cash, bank accounts, JazzCash/Easypaisa, cards. Each expense says which wallet paid (this replaced "Payment method"), and balances update from income, expenses (the whole bill when you paid a split), transfers between wallets and repayments. Each wallet has its own activity page.
+- **Custom categories:** add, rename, recolour, pick an icon, reorder, archive. Deleting a category that has expenses moves them to another one first. Manage them in Settings → Categories.
+- **Budgets:** a monthly limit per category or for all spending, with progress bars. You get a toast and an email the first time a budget passes 80% and 100% in a month.
+- **Recurring bills:** rent, internet, subscriptions (weekly, monthly or yearly, every N). Nothing is added by itself: when a bill is due it shows under Upcoming bills (and a red badge in the menu) with **Mark paid** (opens the expense form prefilled) or **Skip**. A bill due on the 31st stays on the 31st, or the last day of shorter months.
+- **Due dates:** an optional "pay back by" date on split bills and dues. Overdue dues get a red marker, an Overdue filter and a note on the dashboard.
+- **Groups & trips:** put bills in a group (e.g. "Murree trip"). The group page shows what everyone paid and owes, and the fewest payments needed to settle up, including between friends.
+- **Insights:** this month vs last month by category, a 6-month category trend, a spending calendar, unusual-spending alerts and where the money went.
+- **PDF monthly report:** download any month as a PDF, email it to yourself, or turn on Settings → "Monthly PDF report by email" to get last month's report automatically the first time you open the app in a new month.
+- **Install on phone:** Spendwise is a PWA. Use "Install app" in the account menu (or Safari → Share → Add to Home Screen on iPhone). An offline page shows when there's no connection; your financial data is never cached on the device.
+- **Accounts & roles:** sign up (username, email, password, confirm password) with **email OTP verification**, log in, **forgot password** (reset by email code), and **Settings** to change your username, email (confirmed with a code) or password, or delete your account. Two roles: **User** (their own private tracker) and **Admin** (an overview of signups and activity, a user list, and per-user pages to block/unblock, resend verification or delete an account; admins only ever see counts, never anyone's amounts).
 - **Polish:** skeleton loaders, empty and error states, responsive layout from mobile to desktop, light and dark mode.
 
 ## Getting started
@@ -63,6 +73,8 @@ For production: `npm run build && npm start`.
 | `npm run build` / `npm start` | Production build / server |
 | `npm run db:push` | Sync the Prisma schema (indexes) to MongoDB |
 | `npm run create-admin` | Create the admin account (or promote an existing one) from `ADMIN_*` in `.env` |
+| `npm run migrate:v2` | Optional: upgrade every account's older data now (fixed categories → your own categories, payment methods → wallets). Accounts are also upgraded automatically the first time they're opened. |
+| `node scripts/generate-icons.mjs` | Regenerate the app icons in `public/` |
 | `npm run db:studio` | Open Prisma Studio to browse data |
 | `npm run typecheck` | Run TypeScript with no output |
 | `npm run lint` | Run ESLint |
@@ -77,6 +89,8 @@ For production: `npm run build && npm start`.
 | Session | A signed JWT (HS256, `jose`) in an httpOnly, SameSite=Lax cookie that lasts 7 days. |
 | Protection | `src/proxy.ts` redirects by role. Every page, Server Action and the CSV route also re-check the user in the database (`src/lib/auth/dal.ts`). |
 | Data isolation | Every expense query and mutation is filtered by the signed-in user's id. Admins can't open the expense pages or export expenses. |
+| Forgot password | Sends a reset code to the email (the page looks the same whether or not the email has an account). A correct code sets the new password and logs you in. |
+| Logging out other devices | Each session carries a version number. Changing or resetting the password, or an admin blocking the account, bumps it, so every other session stops working. |
 
 ## How splitting works
 

@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 export function QuickAddButton({ className, compact = false }: { className?: string; compact?: boolean }) {
   const { openCreate } = useExpenseUI();
   return (
-    <Button onClick={openCreate} className={cn(compact ? "" : "h-9", className)} size={compact ? "icon" : "default"} aria-label="Quick add expense">
+    <Button onClick={() => openCreate()} className={cn(compact ? "" : "h-9", className)} size={compact ? "icon" : "default"} aria-label="Quick add expense">
       <Plus />
       {!compact && "Quick Add"}
     </Button>

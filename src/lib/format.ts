@@ -33,3 +33,11 @@ export function percentChange(current: number, previous: number): number | null 
   if (previous === 0) return current === 0 ? 0 : null;
   return ((current - previous) / previous) * 100;
 }
+
+/** "hammad@gmail.com" -> "h****d@gmail.com" */
+export function maskEmail(email: string): string {
+  const [name, domain] = email.split("@");
+  if (!domain) return email;
+  if (name.length <= 2) return `${name[0]}*@${domain}`;
+  return `${name[0]}${"*".repeat(Math.min(6, name.length - 2))}${name.at(-1)}@${domain}`;
+}

@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CATEGORY_META, DEFAULT_SORT, PAYMENT_METHOD_LABELS, type SortValue } from "@/lib/constants";
+import { DEFAULT_SORT, PAYMENT_METHOD_LABELS, type SortValue } from "@/lib/constants";
 import { formatExpenseDate } from "@/lib/dates";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -119,7 +119,7 @@ export function ExpensesTable({ expenses, sort }: { expenses: ExpenseDTO[]; sort
               <TableHead>
                 <SortHeader label="Date" field="date" sort={sort} />
               </TableHead>
-              <TableHead className="hidden lg:table-cell">Payment</TableHead>
+              <TableHead className="hidden lg:table-cell">Wallet</TableHead>
               <TableHead className="text-right">
                 <SortHeader label="Amount" field="amount" sort={sort} className="flex-row-reverse" />
               </TableHead>
@@ -157,7 +157,7 @@ export function ExpensesTable({ expenses, sort }: { expenses: ExpenseDTO[]; sort
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-muted-foreground">{formatExpenseDate(e.date)}</TableCell>
                 <TableCell className="hidden whitespace-nowrap text-muted-foreground lg:table-cell">
-                  {e.paymentMethod ? PAYMENT_METHOD_LABELS[e.paymentMethod].split(" (")[0] : "—"}
+                  {e.wallet ? e.wallet.name : e.paymentMethod ? PAYMENT_METHOD_LABELS[e.paymentMethod].split(" (")[0] : "—"}
                 </TableCell>
                 <TableCell className="text-right font-semibold whitespace-nowrap tabular-nums">
                   {formatCurrency(e.amount)}
@@ -189,7 +189,7 @@ export function ExpensesTable({ expenses, sort }: { expenses: ExpenseDTO[]; sort
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{e.description}</p>
                 <p className="truncate text-xs text-muted-foreground">
-                  {CATEGORY_META[e.category].label} · {formatExpenseDate(e.date)}
+                  {e.category.name} · {formatExpenseDate(e.date)}
                   {e.split && ` · split of ${formatCurrency(e.split.total)}`}
                 </p>
               </div>

@@ -8,12 +8,18 @@ export type Role = "USER" | "ADMIN";
 export const SESSION_COOKIE = "session";
 /** Short-lived cookie that remembers which account is waiting for email verification. */
 export const PENDING_COOKIE = "pending_verification";
+/** Short-lived cookie for the forgot-password flow. */
+export const RESET_COOKIE = "pending_reset";
 
 export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
 export const PENDING_TTL_SECONDS = 60 * 30; // 30 minutes
 
-export type SessionPayload = { sub: string; role: Role; typ: "session" };
+/** `sv` must match the user's sessionVersion; bumping it logs out every session. */
+export type SessionPayload = { sub: string; role: Role; sv: number; typ: "session" };
 export type PendingPayload = { sub: string; typ: "pending" };
+/** `sub` is empty when no account has the email (so the response looks the same). */
+export type ResetPayload = { sub: string; email: string; typ: "reset" };
+type AnyPayload = SessionPayload | PendingPayload | ResetPayload;
 
 function secretKey() {
   const secret = process.env.SESSION_SECRET;
@@ -23,7 +29,7 @@ function secretKey() {
   return new TextEncoder().encode(secret);
 }
 
-export async function signToken(payload: SessionPayload | PendingPayload, ttlSeconds: number) {
+export async function signToken(payload: AnyPayload, ttlSeconds: number) {
   return new SignJWT({ ...payload })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -31,7 +37,7 @@ export async function signToken(payload: SessionPayload | PendingPayload, ttlSec
     .sign(secretKey());
 }
 
-export async function verifyToken<T extends SessionPayload | PendingPayload>(
+export async function verifyToken<T extends AnyPayload>(
   token: string | undefined,
   typ: T["typ"],
 ): Promise<T | null> {
@@ -46,5 +52,5 @@ export async function verifyToken<T extends SessionPayload | PendingPayload>(
 }
 
 export function homeFor(role: Role) {
-  return role === "ADMIN" ? "/admin/users" : "/";
+  return role === "ADMIN" ? "/admin" : "/";
 }

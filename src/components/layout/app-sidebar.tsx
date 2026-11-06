@@ -7,7 +7,7 @@ export function AppSidebar({ variant }: { variant: NavVariant }) {
   return (
     <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r bg-sidebar px-3 py-5 lg:flex">
       <div className="px-2">
-        <Brand href={variant === "admin" ? "/admin/users" : "/"} subtitle={variant === "admin" ? "Admin console" : undefined} />
+        <Brand href={variant === "admin" ? "/admin" : "/"} subtitle={variant === "admin" ? "Admin console" : undefined} />
       </div>
       {variant === "user" && (
         <div className="mt-6 px-1">

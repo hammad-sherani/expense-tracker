@@ -8,11 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { WalletSelect } from "@/components/wallets/wallet-select";
 import { todayInput } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { createDue } from "@/server/actions/dues";
 
-export type AddDueDefaults = { amount?: string; description?: string; date?: string };
+export type AddDueDefaults = { amount?: string; description?: string; date?: string; walletId?: string };
 
 function sanitizeAmount(raw: string): string {
   let v = raw.replace(/,/g, "").replace(/[^\d.]/g, "");
@@ -42,6 +43,8 @@ function AddDueForm({
   const [amount, setAmount] = useState(defaults?.amount ?? "");
   const [description, setDescription] = useState(defaults?.description ?? "");
   const [date, setDate] = useState(defaults?.date || todayInput());
+  const [walletId, setWalletId] = useState(defaults?.walletId ?? "");
+  const [dueDate, setDueDate] = useState("");
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const [isPending, startTransition] = useTransition();
   /** Clears a field's error as soon as the user changes it. */
@@ -50,7 +53,15 @@ function AddDueForm({
   const submit = () => {
     setErrors({});
     startTransition(async () => {
-      const result = await createDue({ friendId, direction, amount, description, date });
+      const result = await createDue({
+        friendId,
+        direction,
+        amount,
+        description,
+        date,
+        walletId: direction === "OWED_TO_ME" ? walletId : "",
+        dueDate,
+      });
       if (!result.ok) {
         setErrors(Object.fromEntries(Object.entries(result.fieldErrors ?? {}).map(([k, v]) => [k, v?.[0]])));
         toast.error(result.error);
@@ -167,6 +178,41 @@ function AddDueForm({
           />
           {errors.date && <FieldError>{errors.date}</FieldError>}
         </Field>
+
+        <Field data-invalid={Boolean(errors.dueDate)}>
+          <FieldLabel htmlFor="due-paybackby">
+            Pay back by <span className="font-normal text-muted-foreground">(optional)</span>
+          </FieldLabel>
+          <Input
+            id="due-paybackby"
+            type="date"
+            value={dueDate}
+            onChange={(e) => {
+              setDueDate(e.target.value);
+              clear("dueDate");
+            }}
+            aria-invalid={Boolean(errors.dueDate)}
+          />
+          {errors.dueDate && <FieldError>{errors.dueDate}</FieldError>}
+        </Field>
+
+        {direction === "OWED_TO_ME" && (
+          <Field data-invalid={Boolean(errors.walletId)}>
+            <FieldLabel htmlFor="due-wallet">
+              Paid from <span className="font-normal text-muted-foreground">(optional)</span>
+            </FieldLabel>
+            <WalletSelect
+              id="due-wallet"
+              value={walletId}
+              onChange={(v) => {
+                setWalletId(v);
+                clear("walletId");
+              }}
+              invalid={Boolean(errors.walletId)}
+            />
+            {errors.walletId && <FieldError>{errors.walletId}</FieldError>}
+          </Field>
+        )}
       </FieldGroup>
 
       <p className="flex items-start gap-2 rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
