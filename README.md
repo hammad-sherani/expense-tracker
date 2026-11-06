@@ -8,6 +8,7 @@ A personal finance dashboard built with Next.js 16 (App Router), TypeScript, Tai
 - **Month filters:** month and year selectors, previous/next arrows, a "This month" shortcut and an **All time** mode. The selected period is stored in the URL (`?period=2026-10` or `?period=all`), stays selected across pages, and drives every figure.
 - **Expenses page:** search by description, filter by category, sort by date or amount, pagination, and CSV export of the current filters.
 - **Add / edit / delete:** Quick Add dialog (press **N** anywhere), a full Add Expense page, a details panel with Edit and Delete, and a confirmation before deleting. Every change shows a toast and updates the dashboard without a page reload.
+- **Split bills & dues:** turn on "Split with friends" when adding an expense. Enter the total bill, add friends (saved once, reused later), split equally or with custom amounts, and choose who paid. **Only your share counts as your expense.** If you paid, each friend gets a due for what they owe you; if a friend paid, you get a due for what you owe them. The **Dues** page shows per-friend balances (owed to you / you owe / net), records full or partial repayments with history and undo, and has a "Settle all" button. The dashboard shows a Dues summary.
 - **Accounts & roles:** sign up (username, email, password, confirm password) with **email OTP verification**, log in with email and password, log out. Two roles: **User** (their own private expense tracker) and **Admin** (only a user listing with search, a status filter and stats).
 - **Polish:** skeleton loaders, empty and error states, responsive layout from mobile to desktop, light and dark mode.
 
@@ -77,6 +78,25 @@ For production: `npm run build && npm start`.
 | Protection | `src/proxy.ts` redirects by role. Every page, Server Action and the CSV route also re-check the user in the database (`src/lib/auth/dal.ts`). |
 | Data isolation | Every expense query and mutation is filtered by the signed-in user's id. Admins can't open the expense pages or export expenses. |
 
+## How splitting works
+
+| Situation | Your expense | Dues created |
+| --- | --- | --- |
+| You paid Rs. 3,000 for you, Ali and Sara (equal) | Rs. 1,000 | Ali owes you Rs. 1,000, Sara owes you Rs. 1,000 |
+| Ali paid Rs. 1,500, your share Rs. 500 | Rs. 500 | You owe Ali Rs. 500 |
+
+- Equal splits are exact to the paisa, and any leftover paisa goes to your share (Rs. 1,000 / 3 gives 333.34 + 333.33 + 333.33).
+- Shares must add up to the total bill before you can save.
+- Editing a split keeps repayments already recorded, and a friend's share can't be reduced below what they've already paid.
+- Deleting a split expense removes its dues.
+- A friend can be removed only once nothing is pending with them.
+
+### Paid fully for someone else (e.g. family)
+
+When you pay for something that someone will pay back **in full**, like groceries for home, record it as a **due** instead of an expense. Use **Add due** on the Dues page, or the **"Paid fully for someone else?"** link in the expense form, which carries over the amount, description and date you typed.
+
+Choose the person, **They owe me** or **I owe them**, the amount, what it was for, and the date. These dues are tagged **Not an expense** and don't appear in your expense totals or charts. Record, Settle all and Undo work on them just like on split dues, and they can be deleted from the Dues page.
+
 ## How dates work
 
 An expense's `date` is a **calendar day**. It is stored as midnight UTC of that day, so `2026-10-31` is stored as `2026-10-31T00:00:00.000Z`. All month and year ranges are half-open UTC ranges, such as `[2026-10-01, 2026-11-01)`. As a result, an expense always appears in the month the user picked, whatever the timezone of the server or browser.
@@ -86,7 +106,7 @@ An expense's `date` is a **calendar day**. It is stored as midnight UTC of that 
 ## Project structure
 
 ```
-prisma/schema.prisma              User, EmailOtp, Expense models; Role, Category & PaymentMethod enums
+prisma/schema.prisma              User, EmailOtp, Expense, Friend, Due, DuePayment models + enums
 scripts/create-admin.ts           Creates / promotes the admin account
 src/
   proxy.ts                        Role-based redirects (Next 16 "proxy", formerly middleware)
@@ -94,6 +114,7 @@ src/
     (auth)/                       Login, signup, verify-email pages + split-screen layout
     (app)/page.tsx                Dashboard (users)
     (app)/expenses/...            Expense list & Add Expense page (users)
+    (app)/dues/page.tsx           Dues: who owes whom, repayments (users)
     admin/users/page.tsx          User listing (admins)
     api/expenses/export/route.ts  CSV export
     error.tsx, not-found.tsx      Error & 404 states
@@ -113,13 +134,16 @@ src/
     constants.ts                  Categories, payment methods, sort options
     dates.ts                      Period parsing, UTC ranges, formatting
     format.ts                     PKR formatting, rounding, % change
+    split.ts                      Equal-split & dues planning (paisa-exact)
     validations/                  Zod schemas for expenses and auth (shared by forms and the server)
   server/
     actions/auth.ts               Signup, login, verify email, resend code, logout
-    actions/expenses.ts           Server Actions: create / update / delete
+    actions/expenses.ts           Server Actions: create / update / delete (incl. split dues, transactional)
+    actions/friends.ts, dues.ts   Friends CRUD; record / settle / undo repayments
     queries/expenses.ts           Expense list & export queries
     queries/dashboard.ts          Dashboard aggregations
     queries/users.ts              Admin user listing
+    queries/dues.ts, friends.ts   Dues summary & per-friend balances; friends list
   types/index.ts                  Shared DTO & result types
 ```
 

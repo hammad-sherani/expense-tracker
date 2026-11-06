@@ -1,5 +1,5 @@
 import "server-only";
-import type { Expense, Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { PAGE_SIZE, type SortValue } from "@/lib/constants";
 import { type Period, periodRange, toDateInput } from "@/lib/dates";
@@ -7,7 +7,24 @@ import { roundMoney } from "@/lib/format";
 import type { ExpenseListParams } from "@/lib/validations/expense";
 import type { ExpenseDTO, ExpenseListResult } from "@/types";
 
-export function toExpenseDTO(expense: Expense): ExpenseDTO {
+/** Relations needed to describe a split expense. Pass to every expense read that becomes a DTO. */
+export const expenseInclude = {
+  paidByFriend: { select: { id: true, name: true } },
+  dues: {
+    select: {
+      id: true,
+      direction: true,
+      amount: true,
+      paidAmount: true,
+      friend: { select: { id: true, name: true } },
+    },
+    orderBy: { createdAt: "asc" },
+  },
+} satisfies Prisma.ExpenseInclude;
+
+export type ExpenseWithSplit = Prisma.ExpenseGetPayload<{ include: typeof expenseInclude }>;
+
+export function toExpenseDTO(expense: ExpenseWithSplit): ExpenseDTO {
   return {
     id: expense.id,
     amount: expense.amount,
@@ -16,6 +33,20 @@ export function toExpenseDTO(expense: Expense): ExpenseDTO {
     category: expense.category,
     paymentMethod: expense.paymentMethod,
     notes: expense.notes,
+    split:
+      expense.splitTotal === null
+        ? null
+        : {
+            total: expense.splitTotal,
+            paidBy: expense.paidByFriend,
+            participants: expense.dues.map((d) => ({
+              dueId: d.id,
+              friend: d.friend,
+              direction: d.direction,
+              share: d.amount,
+              paidAmount: d.paidAmount,
+            })),
+          },
     createdAt: expense.createdAt.toISOString(),
     updatedAt: expense.updatedAt.toISOString(),
   };
@@ -81,6 +112,7 @@ export async function listExpenses(
     orderBy: orderBy(params.sort),
     skip: (page - 1) * PAGE_SIZE,
     take: PAGE_SIZE,
+    include: expenseInclude,
   });
 
   return {
@@ -99,6 +131,7 @@ export async function exportExpenses(userId: string, period: Period, params: Exp
   const rows = await db.expense.findMany({
     where: listWhere(userId, period, params),
     orderBy: orderBy(params.sort),
+    include: expenseInclude,
   });
   return rows.map(toExpenseDTO);
 }

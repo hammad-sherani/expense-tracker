@@ -33,25 +33,34 @@ enum PaymentMethod {
   OTHER
 }
 
+/// OWED_TO_ME: I paid, a friend owes me. I_OWE: a friend paid, I owe them.
+enum DueDirection {
+  OWED_TO_ME
+  I_OWE
+}
+
 enum Role {
   USER
   ADMIN
 }
 
 model User {
-  id            String     @id @default(auto()) @map("_id") @db.ObjectId
+  id            String       @id @default(auto()) @map("_id") @db.ObjectId
   /// Lower-case, 3-20 chars of a-z, 0-9 and underscore.
-  username      String     @unique
+  username      String       @unique
   /// Lower-case email address.
-  email         String     @unique
+  email         String       @unique
   passwordHash  String
-  role          Role       @default(USER)
+  role          Role         @default(USER)
   /// Set once the email OTP has been confirmed. Unverified users cannot log in.
   emailVerified DateTime?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
   expenses      Expense[]
   emailOtps     EmailOtp[]
+  friends       Friend[]
+  dues          Due[]
+  duePayments   DuePayment[]
 
   @@index([role, createdAt])
   @@map("users")
@@ -72,22 +81,89 @@ model EmailOtp {
 }
 
 model Expense {
-  id            String         @id @default(auto()) @map("_id") @db.ObjectId
-  userId        String         @db.ObjectId
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String         @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String         @db.ObjectId
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// Amount in PKR, stored with at most 2 decimal places.
-  amount        Float
-  description   String
+  amount         Float
+  description    String
   /// Calendar date of the expense, stored as 00:00:00.000 UTC of that day.
   /// This keeps the calendar day stable regardless of server/browser timezone.
-  date          DateTime
-  category      Category
-  paymentMethod PaymentMethod?
-  notes         String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  date           DateTime
+  category       Category
+  paymentMethod  PaymentMethod?
+  notes          String?
+  /// Whole bill when the expense is split with friends (null = not split).
+  /// `amount` is always *my share*, so statistics only count what I spent.
+  splitTotal     Float?
+  /// Friend who paid the bill (null = I paid).
+  paidByFriendId String?        @db.ObjectId
+  paidByFriend   Friend?        @relation("PaidBy", fields: [paidByFriendId], references: [id], onDelete: SetNull)
+  dues           Due[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   @@index([userId, date])
   @@index([userId, category, date])
   @@map("expenses")
+}
+
+/// A person the user splits bills with. Just a name, not an app account.
+model Friend {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String    @db.ObjectId
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  /// Lower-cased name, unique per user.
+  nameKey   String
+  createdAt DateTime  @default(now())
+  dues      Due[]
+  paidFor   Expense[] @relation("PaidBy")
+
+  @@unique([userId, nameKey])
+  @@map("friends")
+}
+
+/// Money owed between the user and a friend, usually created by a split expense.
+model Due {
+  id          String       @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String       @db.ObjectId
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  friendId    String       @db.ObjectId
+  friend      Friend       @relation(fields: [friendId], references: [id], onDelete: Cascade)
+  expenseId   String?      @db.ObjectId
+  expense     Expense?     @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  /// For standalone dues (no expense), e.g. "Groceries for home" paid for family.
+  description String?
+  /// Calendar day of a standalone due (UTC midnight, like Expense.date).
+  date        DateTime?
+  direction   DueDirection
+  amount      Float
+  /// Sum of `payments`, kept in sync inside the same transaction.
+  paidAmount  Float        @default(0)
+  payments    DuePayment[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([userId, direction])
+  @@index([userId, friendId])
+  @@index([expenseId])
+  @@map("dues")
+}
+
+/// A (partial) repayment of a due.
+model DuePayment {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dueId     String   @db.ObjectId
+  due       Due      @relation(fields: [dueId], references: [id], onDelete: Cascade)
+  amount    Float
+  /// Calendar day of the payment (UTC midnight, like Expense.date).
+  date      DateTime
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([dueId])
+  @@map("due_payments")
 }

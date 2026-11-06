@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, PlusCircle, ReceiptText, Users } from "lucide-react";
+import { HandCoins, LayoutDashboard, PlusCircle, ReceiptText, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
@@ -13,6 +13,7 @@ const NAV_ITEMS = {
     { href: "/", label: "Dashboard", icon: LayoutDashboard, keepPeriod: true },
     { href: "/expenses", label: "Expenses", icon: ReceiptText, keepPeriod: true },
     { href: "/expenses/new", label: "Add Expense", icon: PlusCircle, keepPeriod: false },
+    { href: "/dues", label: "Dues", icon: HandCoins, keepPeriod: false },
   ],
   admin: [{ href: "/admin/users", label: "Users", icon: Users, keepPeriod: false }],
 } as const;

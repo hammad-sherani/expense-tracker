@@ -16,7 +16,7 @@ import {
   yearRange,
 } from "@/lib/dates";
 import { percentChange, roundMoney } from "@/lib/format";
-import { periodWhere, toExpenseDTO } from "@/server/queries/expenses";
+import { expenseInclude, periodWhere, toExpenseDTO } from "@/server/queries/expenses";
 import type {
   CategorySlice,
   ComparisonPoint,
@@ -177,6 +177,7 @@ async function fetchRecent(userId: string, period: Period) {
     where: { userId, ...periodWhere(period) },
     orderBy: [{ date: "desc" }, { createdAt: "desc" }],
     take: 6,
+    include: expenseInclude,
   });
   return rows.map(toExpenseDTO);
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { CalendarDays, Clock, CreditCard, Loader2, Pencil, StickyNote, Trash2 } from "lucide-react";
+import { ArrowRight, CalendarDays, Clock, CreditCard, Loader2, Pencil, StickyNote, Trash2, Users } from "lucide-react";
+import Link from "next/link";
 import { createContext, useCallback, useContext, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { CategoryBadge, CategoryIcon } from "@/components/expenses/category-badge";
@@ -34,7 +35,9 @@ import {
 } from "@/components/ui/sheet";
 import { PAYMENT_METHOD_LABELS } from "@/lib/constants";
 import { formatExpenseDate, formatTimestamp } from "@/lib/dates";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, roundMoney } from "@/lib/format";
+import { initials } from "@/lib/initials";
+import { cn } from "@/lib/utils";
 import { deleteExpense } from "@/server/actions/expenses";
 import type { ExpenseDTO } from "@/types";
 
@@ -183,6 +186,11 @@ function ExpenseDetailsSheet({
                 <p className="text-3xl font-semibold tracking-tight tabular-nums">
                   {formatCurrency(expense.amount)}
                 </p>
+                {expense.split && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Your share of a {formatCurrency(expense.split.total)} bill
+                  </p>
+                )}
                 <SheetTitle className="mt-2 text-base font-medium break-words whitespace-pre-wrap">
                   {expense.description}
                 </SheetTitle>
@@ -214,6 +222,7 @@ function ExpenseDetailsSheet({
                   )}
                 </DetailRow>
               </div>
+              {expense.split && <SplitDetails split={expense.split} myShare={expense.amount} />}
               <Separator />
               <div className="grid grid-cols-2 gap-4 py-4 text-xs text-muted-foreground">
                 <div className="flex gap-2">
@@ -287,6 +296,14 @@ function DeleteExpenseDialog({
                 <span className="font-medium text-foreground">{expense.description}</span> (
                 {formatCurrency(expense.amount)} on {formatExpenseDate(expense.date)}) will be permanently
                 removed. This can&apos;t be undone.
+                {expense.split && (
+                  <span className="mt-2 block">
+                    Its dues with {expense.split.participants.map((p) => p.friend.name).join(", ")} will be removed too
+                    {expense.split.participants.some((p) => p.paidAmount > 0) &&
+                      ", including repayments you've already recorded"}
+                    .
+                  </span>
+                )}
               </>
             ) : null}
           </AlertDialogDescription>
@@ -307,5 +324,62 @@ function DeleteExpenseDialog({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+function SplitDetails({ split, myShare }: { split: NonNullable<ExpenseDTO["split"]>; myShare: number }) {
+  const iPaid = split.paidBy === null;
+  return (
+    <section className="border-t py-4" aria-label="Split details">
+      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+        <Users className="size-4" />
+        Split · {formatCurrency(split.total)} paid by {iPaid ? "you" : split.paidBy?.name}
+      </div>
+      <ul className="mt-3 flex flex-col gap-2.5">
+        <li className="flex items-center gap-3 text-sm">
+          <span className="flex size-7 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">
+            You
+          </span>
+          <span className="flex-1">Your share</span>
+          <span className="font-medium tabular-nums">{formatCurrency(myShare)}</span>
+        </li>
+        {split.participants.length === 0 && (
+          <li className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            No friends are attached to this split, so nobody owes you anything for it. Edit the expense and add the
+            friends who shared the bill.
+          </li>
+        )}
+        {split.participants.map((p) => {
+          const remaining = roundMoney(p.share - p.paidAmount);
+          const settled = remaining <= 0;
+          return (
+            <li key={p.dueId} className="flex items-center gap-3 text-sm">
+              <span className="flex size-7 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">
+                {initials(p.friend.name)}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">
+                  {p.direction === "OWED_TO_ME" ? `${p.friend.name} owes you` : `You owe ${p.friend.name}`}
+                </span>
+                <span className={cn("text-xs", settled ? "text-success" : "text-muted-foreground")}>
+                  {settled
+                    ? "Settled"
+                    : p.paidAmount > 0
+                      ? `${formatCurrency(p.paidAmount)} paid · ${formatCurrency(remaining)} left`
+                      : "Not paid yet"}
+                </span>
+              </span>
+              <span className="font-medium tabular-nums">{formatCurrency(p.share)}</span>
+            </li>
+          );
+        })}
+      </ul>
+      <Button asChild variant="link" size="sm" className="mt-2 h-auto px-0">
+        <Link href={`/dues?dir=${split.paidBy ? "owe" : "owed"}`}>
+          Record payments on the Dues page
+          <ArrowRight />
+        </Link>
+      </Button>
+    </section>
   );
 }

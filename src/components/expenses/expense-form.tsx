@@ -3,8 +3,10 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CalendarIcon, Loader2 } from "lucide-react";
 import { useState, useTransition } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
+import { AddDueDialog } from "@/components/dues/add-due-dialog";
+import { SplitEditor } from "@/components/expenses/split-editor";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -32,9 +34,9 @@ import {
   todayInput,
 } from "@/lib/dates";
 import { cn } from "@/lib/utils";
-import { type ExpenseFormValues, expenseFormSchema } from "@/lib/validations/expense";
+import { EMPTY_SPLIT, type ExpenseFormValues, expenseFormSchema } from "@/lib/validations/expense";
 import { createExpense, updateExpense } from "@/server/actions/expenses";
-import type { ExpenseDTO } from "@/types";
+import type { ExpenseDTO, FriendDTO } from "@/types";
 
 const NO_PAYMENT_METHOD = "__none__";
 
@@ -50,14 +52,43 @@ function sanitizeAmount(raw: string): string {
   return v.slice(0, 12);
 }
 
+/** Rebuilds the split section from a saved expense. */
+function toSplitValues(expense?: ExpenseDTO): ExpenseFormValues["split"] {
+  const split = expense?.split;
+  if (!expense || !split) return EMPTY_SPLIT;
+  if (split.paidBy) {
+    // A friend paid: only my share and the payer are stored; the payer covers the rest of the bill.
+    return {
+      enabled: true,
+      paidBy: split.paidBy.id,
+      myShare: String(expense.amount),
+      participants: [{ friendId: split.paidBy.id, share: String(Math.round((split.total - expense.amount) * 100) / 100) }],
+    };
+  }
+  return {
+    enabled: true,
+    paidBy: "me",
+    myShare: String(expense.amount),
+    participants: split.participants.map((p) => ({ friendId: p.friend.id, share: String(p.share) })),
+  };
+}
+
+function splitFriends(expense?: ExpenseDTO): FriendDTO[] {
+  const split = expense?.split;
+  if (!split) return [];
+  const all = [...split.participants.map((p) => p.friend), ...(split.paidBy ? [split.paidBy] : [])];
+  return [...new Map(all.map((f) => [f.id, f])).values()];
+}
+
 function toFormValues(expense?: ExpenseDTO): ExpenseFormValues {
   return {
-    amount: expense ? String(expense.amount) : "",
+    amount: expense ? String(expense.split ? expense.split.total : expense.amount) : "",
     description: expense?.description ?? "",
     date: expense?.date ?? todayInput(),
     category: expense?.category ?? (undefined as unknown as CategoryValue),
     paymentMethod: expense?.paymentMethod ?? "",
     notes: expense?.notes ?? "",
+    split: toSplitValues(expense),
   };
 }
 
@@ -82,12 +113,15 @@ export function ExpenseForm({
   const isEdit = Boolean(expense);
   const [isPending, startTransition] = useTransition();
   const [dateOpen, setDateOpen] = useState(false);
+  const [dueOpen, setDueOpen] = useState(false);
 
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseFormSchema),
     defaultValues: toFormValues(expense),
     mode: "onTouched",
   });
+  const amount = useWatch({ control: form.control, name: "amount" });
+  const splitEnabled = useWatch({ control: form.control, name: "split.enabled" });
 
   const onSubmit = form.handleSubmit((values) => {
     startTransition(async () => {
@@ -97,7 +131,8 @@ export function ExpenseForm({
         if (result.fieldErrors) {
           for (const [name, messages] of Object.entries(result.fieldErrors)) {
             if (messages?.[0]) {
-              form.setError(name as keyof ExpenseFormValues, { message: messages[0] });
+              // Paths may be nested, e.g. "split.participants.0.share".
+              form.setError(name as Parameters<typeof form.setError>[0], { message: messages[0] });
             }
           }
         }
@@ -116,6 +151,7 @@ export function ExpenseForm({
   });
 
   return (
+    <>
     <form onSubmit={onSubmit} noValidate className={cn("flex flex-col gap-6", className)}>
       <FieldGroup className="gap-5">
         {/* Amount */}
@@ -125,7 +161,7 @@ export function ExpenseForm({
           render={({ field, fieldState }) => (
             <Field data-invalid={fieldState.invalid}>
               <FieldLabel htmlFor="expense-amount">
-                Amount <span className="text-destructive">*</span>
+                {splitEnabled ? "Total bill" : "Amount"} <span className="text-destructive">*</span>
               </FieldLabel>
               <div className="relative">
                 <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm font-medium text-muted-foreground">
@@ -145,6 +181,32 @@ export function ExpenseForm({
               <FieldError errors={[fieldState.error]} />
             </Field>
           )}
+        />
+
+        {/* Split with friends */}
+        <Controller
+          control={form.control}
+          name="split"
+          render={({ field, formState }) => {
+            const e = formState.errors.split;
+            return (
+              <SplitEditor
+                value={field.value}
+                onChange={field.onChange}
+                total={Number(amount)}
+                initialFriends={splitFriends(expense)}
+                onPaidForSomeone={isEdit ? undefined : () => setDueOpen(true)}
+                errors={{
+                  participants: e?.participants?.message ?? e?.participants?.root?.message,
+                  myShare: e?.myShare?.message,
+                  paidBy: e?.paidBy?.message,
+                  shares: Object.fromEntries(
+                    (Array.isArray(e?.participants) ? e.participants : []).map((pe, i) => [i, pe?.share?.message]),
+                  ),
+                }}
+              />
+            );
+          }}
         />
 
         {/* Description */}
@@ -347,5 +409,24 @@ export function ExpenseForm({
         </Button>
       </div>
     </form>
+
+    {/* Rendered outside <form>: portal events bubble through the React tree and would submit the expense form. */}
+    {!isEdit && (
+      <AddDueDialog
+        open={dueOpen}
+        onOpenChange={setDueOpen}
+        defaults={{
+          amount: form.getValues("amount"),
+          description: form.getValues("description"),
+          date: form.getValues("date"),
+        }}
+        onCreated={() => {
+          // Nothing is saved as an expense: close the quick-add dialog, or clear the full-page form.
+          if (onCancel && !resetOnSuccess) onCancel();
+          else form.reset({ ...toFormValues(), date: form.getValues("date") });
+        }}
+      />
+    )}
+    </>
   );
 }

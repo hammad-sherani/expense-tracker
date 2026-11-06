@@ -1,5 +1,25 @@
 import type { CategoryValue, PaymentMethodValue } from "@/lib/constants";
 
+export type FriendDTO = { id: string; name: string };
+
+export type DueDirectionValue = "OWED_TO_ME" | "I_OWE";
+
+/** How a split expense was divided. Only present when the expense is split. */
+export type ExpenseSplitDTO = {
+  /** Whole bill. The expense `amount` is my share. */
+  total: number;
+  /** null = I paid. */
+  paidBy: FriendDTO | null;
+  /** Friends with a due on this expense. */
+  participants: {
+    dueId: string;
+    friend: FriendDTO;
+    direction: DueDirectionValue;
+    share: number;
+    paidAmount: number;
+  }[];
+};
+
 /** Serializable expense passed from the server to client components. */
 export type ExpenseDTO = {
   id: string;
@@ -10,10 +30,39 @@ export type ExpenseDTO = {
   category: CategoryValue;
   paymentMethod: PaymentMethodValue | null;
   notes: string | null;
+  split: ExpenseSplitDTO | null;
   /** ISO timestamps */
   createdAt: string;
   updatedAt: string;
 };
+
+export type DuePaymentDTO = { id: string; amount: number; date: string; note: string | null };
+
+export type DueDTO = {
+  id: string;
+  /** What it was for: the expense description, or the standalone due's own. */
+  description: string;
+  /** Calendar day "YYYY-MM-DD": expense date, or the standalone due's date. */
+  date: string;
+  /** true = not tied to an expense (e.g. paid fully for family). */
+  standalone: boolean;
+  direction: DueDirectionValue;
+  amount: number;
+  paidAmount: number;
+  remaining: number;
+  createdAt: string;
+  expense: { id: string; description: string; date: string; splitTotal: number | null } | null;
+  payments: DuePaymentDTO[];
+};
+
+export type FriendDuesDTO = {
+  friend: FriendDTO;
+  /** Pending total for the selected direction. */
+  remaining: number;
+  dues: DueDTO[];
+};
+
+export type DuesSummary = { owedToMe: number; iOwe: number; net: number; friendsOwing: number };
 
 export type ActionResult<T = undefined> =
   | { ok: true; data: T; message?: string }

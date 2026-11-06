@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowUp, ArrowUpDown, Eye, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Eye, MoreHorizontal, Pencil, Trash2, Users } from "lucide-react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { CategoryBadge, CategoryIcon } from "@/components/expenses/category-badge";
 import { useExpenseUI } from "@/components/expenses/expense-dialogs";
@@ -19,6 +19,15 @@ import { formatExpenseDate } from "@/lib/dates";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ExpenseDTO } from "@/types";
+
+function SplitBadge() {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+      <Users className="size-3" />
+      Split
+    </span>
+  );
+}
 
 function RowActions({ expense }: { expense: ExpenseDTO }) {
   const { openDetails, openEdit, requestDelete } = useExpenseUI();
@@ -135,7 +144,10 @@ export function ExpensesTable({ expenses, sort }: { expenses: ExpenseDTO[]; sort
                   <div className="flex items-center gap-3">
                     <CategoryIcon category={e.category} size="sm" />
                     <div className="min-w-0">
-                      <p className="truncate font-medium">{e.description}</p>
+                      <p className="flex items-center gap-2 truncate font-medium">
+                        <span className="truncate">{e.description}</span>
+                        {e.split && <SplitBadge />}
+                      </p>
                       {e.notes && <p className="truncate text-xs text-muted-foreground">{e.notes}</p>}
                     </div>
                   </div>
@@ -149,6 +161,11 @@ export function ExpensesTable({ expenses, sort }: { expenses: ExpenseDTO[]; sort
                 </TableCell>
                 <TableCell className="text-right font-semibold whitespace-nowrap tabular-nums">
                   {formatCurrency(e.amount)}
+                  {e.split && (
+                    <span className="block text-xs font-normal text-muted-foreground">
+                      of {formatCurrency(e.split.total)}
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell className="pr-3 text-right">
                   <RowActions expense={e} />
@@ -173,6 +190,7 @@ export function ExpensesTable({ expenses, sort }: { expenses: ExpenseDTO[]; sort
                 <p className="truncate text-sm font-medium">{e.description}</p>
                 <p className="truncate text-xs text-muted-foreground">
                   {CATEGORY_META[e.category].label} · {formatExpenseDate(e.date)}
+                  {e.split && ` · split of ${formatCurrency(e.split.total)}`}
                 </p>
               </div>
               <span className="shrink-0 text-sm font-semibold tabular-nums">{formatCurrency(e.amount)}</span>
