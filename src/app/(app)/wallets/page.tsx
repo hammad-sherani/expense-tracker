@@ -74,6 +74,7 @@ async function Wallets() {
         <p className="text-xs text-muted-foreground">
           A balance is the starting balance plus income, minus expenses you paid (the whole bill for split expenses),
           plus or minus transfers and repayments recorded in that wallet.
+          {" "}Open a wallet to see its history.
         </p>
       </div>
     </>

@@ -13,7 +13,7 @@ import {
   shiftMonth,
   todayUTC,
 } from "@/lib/dates";
-import { percentChange, roundMoney } from "@/lib/format";
+import { formatCurrency, percentChange, roundMoney } from "@/lib/format";
 import { expenseInclude, periodWhere, toCategoryDTO, toExpenseDTO } from "@/server/queries/expenses";
 import { incomeByMonth } from "@/server/queries/income";
 import type {
@@ -183,17 +183,34 @@ function slicesFromRows(rows: Row[], lookup: CategoryLookup) {
   return buildSlices(totals, lookup);
 }
 
-function savingsCards(income: number, spent: number, incomeHint: string): SummaryCard[] {
-  const saved = roundMoney(income - spent);
-  return [
-    { key: "income", label: "Income", value: income, hint: incomeHint },
-    {
-      key: "saved",
-      label: saved >= 0 ? "Saved" : "Overspent",
-      value: Math.abs(saved),
-      hint: income > 0 ? `${((saved / income) * 100).toFixed(1)}% savings rate` : "Add income to see savings",
-    },
-  ];
+// "Saved" (income − spending) was removed from the dashboard: it counted committees and
+// investments as money left, which confused it with "Left to spend".
+function savingsCards(income: number, _spent: number, incomeHint: string): SummaryCard[] {
+  return [{ key: "income", label: "Income", value: income, hint: incomeHint }];
+}
+
+/**
+ * Money that left your hands this month without being spending: your own committee installments,
+ * investments bought (minus sold), goal savings from a wallet and loan principal repaid.
+ * (A friend's committee share is left out: they pay it back.)
+ */
+async function committedBetween(userId: string, start: Date, end: Date) {
+  const inRange = { userId, date: { gte: start, lt: end } };
+  const [committee, investing, goals, loans] = await Promise.all([
+    db.committeePayment.aggregate({
+      where: { ...inRange, committee: { OR: [{ forFriendId: null }, { forFriendId: { isSet: false } }] } },
+      _sum: { amount: true },
+    }),
+    db.investmentTxn.groupBy({ by: ["type"], where: { ...inRange, walletId: { not: null } }, _sum: { amount: true } }),
+    db.goalEntry.groupBy({ by: ["type"], where: { ...inRange, walletId: { not: null } }, _sum: { amount: true } }),
+    db.loanPayment.aggregate({ where: inRange, _sum: { principalPart: true } }),
+  ]);
+  const invested = investing.reduce((a, r) => a + (r.type === "BUY" ? 1 : -1) * (r._sum.amount ?? 0), 0);
+  const saved = goals.reduce((a, r) => a + (r.type === "DEPOSIT" ? 1 : -1) * (r._sum.amount ?? 0), 0);
+  return {
+    committee: roundMoney(committee._sum.amount ?? 0),
+    other: roundMoney(invested + saved + (loans._sum.principalPart ?? 0)),
+  };
 }
 
 async function sumBetween(userId: string, start: Date, end: Date) {
@@ -239,12 +256,14 @@ async function getMonthDashboard(userId: string, period: Extract<Period, { kind:
   const windowStart = monthRange(shiftMonth(year, month, -11).year, shiftMonth(year, month, -11).month).start;
   const windowEnd = monthRange(year, month).end;
 
-  const [rows, todayTotal, recent, lookup, income] = await Promise.all([
+  const { start: monthStart, end: monthEnd } = monthRange(year, month);
+  const [rows, todayTotal, recent, lookup, income, committed] = await Promise.all([
     fetchRows(userId, windowStart, windowEnd),
     sumBetween(userId, today, addDays(today, 1)),
     fetchRecent(userId, period),
     categoryLookup(userId),
     incomeByMonth(userId, windowStart, windowEnd),
+    committedBetween(userId, monthStart, monthEnd),
   ]);
   const monthIncome = roundMoney(income.get(monthKey(year, month)) ?? 0);
 
@@ -264,6 +283,19 @@ async function getMonthDashboard(userId: string, period: Extract<Period, { kind:
       changeLabel: `vs ${monthLabel(prev.year, prev.month, true)}`,
     },
     ...savingsCards(monthIncome, monthTotal, monthLabel(year, month)),
+    {
+      key: "out",
+      label: "Money out",
+      // Selling or taking money back out of savings doesn't make "money out" smaller than spending.
+      value: roundMoney(monthTotal + committed.committee + Math.max(0, committed.other)),
+      hint: [
+        `${formatCurrency(monthTotal)} spent`,
+        committed.committee ? `${formatCurrency(committed.committee)} committee` : null,
+        committed.other > 0 ? `${formatCurrency(committed.other)} invested/saved` : null,
+      ]
+        .filter(Boolean)
+        .join(" + "),
+    },
     {
       key: "today",
       label: "Today",

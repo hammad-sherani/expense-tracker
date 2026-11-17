@@ -13,6 +13,9 @@ export type WalletDTO = {
   openingBalance: number;
   balance: number;
   archived: boolean;
+  /** Cards only. */
+  creditLimit: number | null;
+  dueDay: number | null;
 };
 
 /** Wallet as shown on an expense/income row. */
@@ -57,6 +60,8 @@ export type ExpenseDTO = {
   notes: string | null;
   split: ExpenseSplitDTO | null;
   group: GroupRef | null;
+  /** The savings goal this was paid from. */
+  goal: { id: string; name: string } | null;
   /** ISO timestamps */
   createdAt: string;
   updatedAt: string;
@@ -166,6 +171,8 @@ export type IncomeDTO = {
   /** Calendar day "YYYY-MM-DD". */
   date: string;
   notes: string | null;
+  /** Salary only: tax the employer deducted. */
+  taxDeducted: number | null;
   createdAt: string;
 };
 

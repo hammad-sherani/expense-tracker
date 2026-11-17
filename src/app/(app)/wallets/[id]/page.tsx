@@ -1,25 +1,23 @@
-import { ArrowDownLeft, ArrowLeft, ArrowUpRight, History } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { PageHeaderSkeleton } from "@/components/dashboard/dashboard-skeleton";
-import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { RemoveTransferButton } from "@/components/wallets/remove-transfer-button";
 import { WalletMenu } from "@/components/wallets/wallet-cards";
+import { WalletHistoryTable } from "@/components/wallets/wallet-history";
 import { requireUser } from "@/lib/auth/dal";
-import { formatExpenseDate } from "@/lib/dates";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { objectId } from "@/lib/validations/money";
 import { WALLET_TYPE_META } from "@/lib/wallets";
 import { listWallets } from "@/server/queries/lookups";
-import { getWalletActivity } from "@/server/queries/wallets";
+import { ACTIVITY_LIMIT, getWalletActivity } from "@/server/queries/wallets";
 
 export const metadata: Metadata = { title: "Wallet" };
 
@@ -39,7 +37,7 @@ async function WalletView({ params }: { params: PageProps<"/wallets/[id]">["para
   const wallets = await listWallets(user.id);
   const wallet = wallets.find((w) => w.id === id);
   if (!wallet) notFound();
-  const activity = await getWalletActivity(user.id, id);
+  const activity = await getWalletActivity(user.id, [id], wallet.balance);
   const meta = WALLET_TYPE_META[wallet.type];
   const Icon = meta.icon;
   const moneyIn = activity.filter((a) => a.amount > 0).reduce((s, a) => s + a.amount, 0);
@@ -85,44 +83,12 @@ async function WalletView({ params }: { params: PageProps<"/wallets/[id]">["para
           </Card>
         </div>
 
-        <Card className="gap-0 py-0">
-          {activity.length === 0 ? (
-            <EmptyState
-              icon={History}
-              title="No activity yet"
-              description="Expenses, income, transfers and repayments recorded in this wallet show up here."
-            />
-          ) : (
-            <ul className="divide-y">
-              {activity.map((a) => (
-                <li key={a.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
-                  <span
-                    className={cn(
-                      "flex size-8 shrink-0 items-center justify-center rounded-lg",
-                      a.amount > 0 ? "bg-success/10 text-success" : "bg-muted text-muted-foreground",
-                    )}
-                    aria-hidden
-                  >
-                    {a.amount > 0 ? <ArrowDownLeft className="size-4" /> : <ArrowUpRight className="size-4" />}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{a.title}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {formatExpenseDate(a.date)} · {a.subtitle}
-                    </p>
-                  </div>
-                  <span className={cn("shrink-0 text-sm font-semibold tabular-nums", a.amount > 0 && "text-success")}>
-                    {a.amount > 0 ? "+" : a.amount < 0 ? "−" : ""}
-                    {formatCurrency(Math.abs(a.amount))}
-                  </span>
-                  {a.transferId && <RemoveTransferButton id={a.transferId} />}
-                </li>
-              ))}
-            </ul>
-          )}
+        <Card className="min-w-0 gap-0 py-0">
+          <WalletHistoryTable rows={activity} openingBalance={wallet.openingBalance} removableTransfers />
         </Card>
         <p className="text-xs text-muted-foreground">
-          Starting balance {formatCurrency(wallet.openingBalance)}. Shows the latest 100 entries of each kind.
+          Balance is what was in this wallet right after each entry. Starting balance {formatCurrency(wallet.openingBalance)}.
+          {activity.length >= ACTIVITY_LIMIT && ` Shows the latest ${ACTIVITY_LIMIT} entries.`}
         </p>
       </div>
     </>

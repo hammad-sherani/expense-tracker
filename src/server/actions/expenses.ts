@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { refresh, revalidatePath } from "next/cache";
 import { nextOccurrence } from "@/lib/recurrence";
 import { checkBudgetAlerts } from "@/server/budgets";
+import { goalBalance } from "@/server/goal-fund";
 import { requireUser } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
 import { dateInputToUTC } from "@/lib/dates";
@@ -28,8 +29,10 @@ function toPlan(values: ExpenseFormValues) {
     description: values.description,
     date: dateInputToUTC(values.date),
     categoryId: values.categoryId,
-    walletId: values.walletId === "" ? null : values.walletId,
+    // Fund money was already taken out of its wallet when it was set aside.
+    walletId: values.goalId || values.walletId === "" ? null : values.walletId,
     groupId: values.groupId === "" ? null : values.groupId,
+    goalId: values.goalId === "" ? null : values.goalId,
     notes: values.notes === "" ? null : values.notes,
   };
 
@@ -89,6 +92,25 @@ async function assertOwnRefs(tx: Tx, userId: string, values: ExpenseFormValues) 
   if (!category) throw new FieldConflict("categoryId", "This category no longer exists. Please pick another.");
   if (!wallet) throw new FieldConflict("walletId", "This wallet no longer exists. Please pick another.");
   if (!group) throw new FieldConflict("groupId", "This group no longer exists.");
+}
+
+/** A payment from a fund must be the user's own goal and can't be more than the fund holds. */
+async function assertFund(tx: Tx, userId: string, goalId: string | null, amount: number, editingId?: string) {
+  if (!goalId) return;
+  const goal = await tx.goal.findFirst({ where: { id: goalId, userId }, select: { name: true } });
+  if (!goal) throw new FieldConflict("amount", "This goal no longer exists.");
+  const balance = await goalBalance(tx, userId, goalId, editingId);
+  if (toPaisa(amount) > toPaisa(balance)) {
+    throw new FieldConflict("amount", `Only ${formatCurrency(balance)} is in the ${goal.name} fund.`);
+  }
+}
+
+const LOAN_LOCKED = "This is the interest from a loan payment. Undo the payment on the Loans page instead.";
+
+/** Loan interest expenses are changed only through their loan payment. */
+async function assertNotLoanInterest(tx: Tx, userId: string, expenseId: string) {
+  const linked = await tx.loanPayment.findFirst({ where: { userId, expenseId }, select: { id: true } });
+  if (linked) throw new FieldConflict("_form", LOAN_LOCKED);
 }
 
 /** Every friend in the split must belong to the signed-in user. */
@@ -193,6 +215,7 @@ export async function createExpense(
   try {
     const expense = await db.$transaction(async (tx) => {
       await assertOwnFriends(tx, user.id, parsed.data);
+      await assertFund(tx, user.id, plan.data.goalId, plan.data.amount);
       const created = await tx.expense.create({ data: { ...plan.data, userId: user.id, recurringId } });
       await syncDues(tx, user.id, created.id, plan.dues, plan.dueDate);
       if (recurringId) {
@@ -224,7 +247,9 @@ export async function updateExpense(id: string, input: ExpenseFormValues): Promi
 
   try {
     const expense = await db.$transaction(async (tx) => {
+      await assertNotLoanInterest(tx, user.id, idResult.data);
       await assertOwnFriends(tx, user.id, parsed.data);
+      await assertFund(tx, user.id, plan.data.goalId, plan.data.amount, idResult.data);
       // userId in the filter: a user can only ever change their own expenses.
       await tx.expense.update({ where: { id: idResult.data, userId: user.id }, data: plan.data });
       await syncDues(tx, user.id, idResult.data, plan.dues, plan.dueDate);
@@ -245,6 +270,8 @@ export async function deleteExpense(id: string): Promise<ActionResult> {
   const user = await requireUser();
 
   try {
+    const linked = await db.loanPayment.findFirst({ where: { userId: user.id, expenseId: idResult.data }, select: { id: true } });
+    if (linked) return { ok: false, error: LOAN_LOCKED };
     // Its dues and their repayments are removed too (cascade).
     await db.expense.delete({ where: { id: idResult.data, userId: user.id } });
     revalidateAll();

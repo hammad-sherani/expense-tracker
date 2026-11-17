@@ -14,6 +14,7 @@ export const expenseInclude = {
   category: { select: { id: true, name: true, icon: true, color: true, archivedAt: true } },
   wallet: { select: { id: true, name: true, type: true, color: true } },
   group: { select: { id: true, name: true, emoji: true } },
+  goal: { select: { id: true, name: true } },
   paidByFriend: { select: { id: true, name: true } },
   dues: {
     select: {
@@ -79,6 +80,7 @@ export function toExpenseDTO(expense: ExpenseWithSplit): ExpenseDTO {
             dueDate: firstDueDate(expense.dues),
           },
     group: expense.group ? { id: expense.group.id, name: expense.group.name, emoji: expense.group.emoji } : null,
+    goal: expense.goal,
     createdAt: expense.createdAt.toISOString(),
     updatedAt: expense.updatedAt.toISOString(),
   };

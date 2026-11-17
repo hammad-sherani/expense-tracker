@@ -18,11 +18,11 @@ const notSet = <K extends string>(key: K) => [{ [key]: null }, { [key]: { isSet:
 /**
  * Current balance of every wallet:
  * opening + income − money spent (whole bill when I paid a split) ± transfers ± due repayments
- * − standalone dues I paid fully for someone.
+ * − standalone dues I paid fully for someone ± investments bought and sold.
  */
 export async function walletBalances(userId: string): Promise<Map<string, number>> {
   const iPaid = { OR: notSet("paidByFriendId") as never };
-  const [wallets, incomes, spent, splitShares, tOut, tIn, payments, lent] = await Promise.all([
+  const [wallets, incomes, spent, splitShares, tOut, tIn, payments, lent, investing, committeePaid, pots, goalMoney, borrowed, loanPaid, collected, adjusted] = await Promise.all([
     db.wallet.findMany({ where: { userId }, select: { id: true, openingBalance: true } }),
     db.income.groupBy({ by: ["walletId"], where: { userId, walletId: { not: null } }, _sum: { amount: true } }),
     db.expense.groupBy({
@@ -47,6 +47,33 @@ export async function walletBalances(userId: string): Promise<Map<string, number
       where: { userId, walletId: { not: null }, direction: "OWED_TO_ME", OR: notSet("expenseId") as never },
       _sum: { amount: true },
     }),
+    db.investmentTxn.groupBy({
+      by: ["walletId", "type"],
+      where: { userId, walletId: { not: null } },
+      _sum: { amount: true },
+    }),
+    db.committeePayment.groupBy({
+      by: ["walletId"],
+      where: { userId, walletId: { not: null } },
+      _sum: { amount: true },
+    }),
+    db.committee.groupBy({
+      by: ["payoutWalletId"],
+      where: { userId, payoutWalletId: { not: null } },
+      _sum: { payoutAmount: true },
+    }),
+    db.goalEntry.groupBy({
+      by: ["walletId", "type"],
+      where: { userId, walletId: { not: null } },
+      _sum: { amount: true },
+    }),
+    db.loan.groupBy({ by: ["receivedWalletId"], where: { userId, receivedWalletId: { not: null } }, _sum: { principal: true } }),
+    // Only the repaid loan amount: the interest part is an expense, already counted above.
+    db.loanPayment.groupBy({ by: ["walletId"], where: { userId, walletId: { not: null } }, _sum: { principalPart: true } }),
+    // A friend paying back their committee share.
+    db.committeeCollection.groupBy({ by: ["walletId"], where: { userId, walletId: { not: null } }, _sum: { amount: true } }),
+    // Balance corrections: + added, − taken out.
+    db.walletAdjustment.groupBy({ by: ["walletId"], where: { userId }, _sum: { amount: true } }),
   ]);
 
   const balance = new Map(wallets.map((w) => [w.id, w.openingBalance]));
@@ -60,6 +87,16 @@ export async function walletBalances(userId: string): Promise<Map<string, number
   for (const r of tIn) add(r.toWalletId, r._sum.amount);
   for (const p of payments) add(p.walletId, p.due.direction === "OWED_TO_ME" ? p.amount : -p.amount);
   for (const r of lent) add(r.walletId, -(r._sum.amount ?? 0));
+  // Buying an investment takes money out; selling or a dividend puts it back.
+  for (const r of investing) add(r.walletId, r.type === "BUY" ? -(r._sum.amount ?? 0) : r._sum.amount);
+  for (const r of committeePaid) add(r.walletId, -(r._sum.amount ?? 0));
+  for (const r of pots) add(r.payoutWalletId, r._sum.payoutAmount);
+  // Money set aside for a goal leaves the wallet; taking it out puts it back.
+  for (const r of goalMoney) add(r.walletId, r.type === "DEPOSIT" ? -(r._sum.amount ?? 0) : r._sum.amount);
+  for (const r of borrowed) add(r.receivedWalletId, r._sum.principal);
+  for (const r of loanPaid) add(r.walletId, -(r._sum.principalPart ?? 0));
+  for (const r of collected) add(r.walletId, r._sum.amount);
+  for (const r of adjusted) add(r.walletId, r._sum.amount);
 
   for (const [id, v] of balance) balance.set(id, roundMoney(v));
   return balance;
@@ -70,7 +107,7 @@ export async function listWallets(userId: string, withBalances = true): Promise<
     db.wallet.findMany({
       where: { userId },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-      select: { id: true, name: true, type: true, color: true, openingBalance: true, archivedAt: true },
+      select: { id: true, name: true, type: true, color: true, openingBalance: true, archivedAt: true, creditLimit: true, dueDay: true },
     }),
     withBalances ? walletBalances(userId) : Promise.resolve(new Map<string, number>()),
   ]);
@@ -82,6 +119,8 @@ export async function listWallets(userId: string, withBalances = true): Promise<
     openingBalance: w.openingBalance,
     balance: balances.get(w.id) ?? w.openingBalance,
     archived: Boolean(w.archivedAt),
+    creditLimit: w.creditLimit ?? null,
+    dueDay: w.dueDay ?? null,
   }));
 }
 

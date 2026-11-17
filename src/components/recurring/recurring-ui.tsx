@@ -3,10 +3,13 @@
 import {
   CalendarClock,
   Check,
+  HandCoins,
+  Landmark,
   Loader2,
   MoreVertical,
   Pause,
   Pencil,
+  PiggyBank,
   Play,
   Plus,
   Repeat,
@@ -16,6 +19,8 @@ import {
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
+import { CollectButton, collectDueText, committeeDueText, PayCommitteeButton } from "@/components/committees/committee-ui";
+import { loanDueText, PayLoanButton } from "@/components/loans/loan-ui";
 import { CategoryIcon } from "@/components/expenses/category-badge";
 import { useExpenseUI } from "@/components/expenses/expense-dialogs";
 import { useLookups } from "@/components/layout/lookups";
@@ -53,6 +58,8 @@ import {
   skipRecurring,
   updateRecurring,
 } from "@/server/actions/recurring";
+import type { CommitteeDTO } from "@/server/queries/committees";
+import type { LoanDTO } from "@/server/queries/loans";
 import type { RecurringDTO, RecurringStatus } from "@/server/queries/recurring";
 
 type Errors = Record<string, string | undefined>;
@@ -143,7 +150,12 @@ function RecurringForm({ bill, onDone }: { bill?: RecurringDTO; onDone: () => vo
             {errors.amount && <FieldError>{errors.amount}</FieldError>}
           </Field>
           <Field data-invalid={Boolean(errors.categoryId)}>
-            <FieldLabel htmlFor="rec-category">Category</FieldLabel>
+            <div className="flex items-center justify-between">
+              <FieldLabel htmlFor="rec-category">Category</FieldLabel>
+              <Link href="/settings/categories" onClick={onDone} className="text-xs text-muted-foreground hover:text-foreground">
+                Manage
+              </Link>
+            </div>
             <Select
               value={categoryId}
               onValueChange={(v) => {
@@ -440,7 +452,18 @@ export function RecurringRow({ bill }: { bill: RecurringDTO }) {
 }
 
 /** Dashboard card: bills overdue or due in the next 7 days. */
-export function UpcomingBillsCard({ bills }: { bills: RecurringDTO[] }) {
+export function UpcomingBillsCard({
+  bills,
+  committees = [],
+  collections = [],
+  loans = [],
+}: {
+  bills: RecurringDTO[];
+  committees?: CommitteeDTO[];
+  /** Friends' committee shares to collect. */
+  collections?: CommitteeDTO[];
+  loans?: LoanDTO[];
+}) {
   return (
     <Card className="gap-4">
       <CardHeader>
@@ -453,7 +476,7 @@ export function UpcomingBillsCard({ bills }: { bills: RecurringDTO[] }) {
         </CardAction>
       </CardHeader>
       <CardContent>
-        {bills.length === 0 ? (
+        {bills.length === 0 && committees.length === 0 && collections.length === 0 && loans.length === 0 ? (
           <p className="py-4 text-center text-sm text-muted-foreground">Nothing due this week.</p>
         ) : (
           <ul className="-mx-2 flex flex-col">
@@ -467,6 +490,51 @@ export function UpcomingBillsCard({ bills }: { bills: RecurringDTO[] }) {
                   </p>
                 </div>
                 <BillActions bill={b} compact />
+              </li>
+            ))}
+            {committees.map((c) => (
+              <li key={c.id} className="flex items-center gap-3 rounded-lg px-2 py-2">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary" aria-hidden>
+                  <PiggyBank className="size-3.5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">
+                    {c.name}
+                    {c.forFriend && <span className="font-normal text-muted-foreground"> · for {c.forFriend.name}</span>}
+                  </p>
+                  <p className={cn("truncate text-xs", c.status === "overdue" ? "text-destructive" : "text-muted-foreground")}>
+                    {formatCurrency(c.monthlyAmount)} · {committeeDueText(c)}
+                  </p>
+                </div>
+                <PayCommitteeButton committee={c} />
+              </li>
+            ))}
+            {collections.map((c) => (
+              <li key={`collect-${c.id}`} className="flex items-center gap-3 rounded-lg px-2 py-2">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-success/10 text-success" aria-hidden>
+                  <HandCoins className="size-3.5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">Collect from {c.forFriend?.name}</p>
+                  <p className={cn("truncate text-xs", c.collectStatus === "overdue" ? "text-destructive" : "text-muted-foreground")}>
+                    {formatCurrency(c.monthlyAmount)} · {c.name} · {collectDueText(c)}
+                  </p>
+                </div>
+                <CollectButton committee={c} />
+              </li>
+            ))}
+            {loans.map((l) => (
+              <li key={l.id} className="flex items-center gap-3 rounded-lg px-2 py-2">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary" aria-hidden>
+                  <Landmark className="size-3.5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{l.name}</p>
+                  <p className={cn("truncate text-xs", l.status === "overdue" ? "text-destructive" : "text-muted-foreground")}>
+                    {formatCurrency(l.next?.amount ?? l.monthlyInstallment)} · {loanDueText(l)}
+                  </p>
+                </div>
+                <PayLoanButton loan={l} />
               </li>
             ))}
           </ul>

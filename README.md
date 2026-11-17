@@ -11,6 +11,12 @@ A personal finance dashboard built with Next.js 16 (App Router), TypeScript, Tai
 - **Split bills & dues:** turn on "Split with friends" when adding an expense. Enter the total bill, add friends (saved once, reused later), split equally or with custom amounts, and choose who paid. **Only your share counts as your expense.** If you paid, each friend gets a due for what they owe you; if a friend paid, you get a due for what you owe them. The **Dues** page shows per-friend balances (owed to you / you owe / net), records full or partial repayments with history and undo, and has a "Settle all" button. The dashboard shows a Dues summary.
 - **Income & savings:** record salary and other income; the dashboard and Income page show income, how much you saved and your savings rate. The monthly trend shows income next to spending.
 - **Wallets:** Cash, bank accounts, JazzCash/Easypaisa, cards. Each expense says which wallet paid (this replaced "Payment method"), and balances update from income, expenses (the whole bill when you paid a split), transfers between wallets and repayments. Each wallet has its own activity page.
+- **Portfolio:** track mutual funds, silver, gold, stocks and more with buys, sales and dividends in units (fund units, grams, tola, shares). Shows average cost, current value, profit/loss, return %, a price history chart, allocation and your **net worth** (wallets + investments + committees + goals + owed to you − you owe − loans), with a month-by-month growth chart. Silver and gold prices update automatically; a mutual fund's NAV is entered by you. A purchase can come out of a wallet and a sale or dividend can go back into one, but none of it counts as expenses or income.
+- **Left to spend:** as soon as income is added, the Income page and Dashboard show income minus the month's fixed payments and other spending, with each payment tagged Paid, Due or Overdue.
+- **Loans & credit cards:** add a bank, car or family loan with its yearly rate and monthly installment. Each payment is split into interest and repayment (prefilled, editable to match your statement): **only the interest is an expense** (category "Loan interest"), while the repaid amount just leaves the wallet and lowers what you owe. Shows the balance, next due date, payoff date and interest paid so far; installments appear in Upcoming bills, the menu badge and Left to spend. Card wallets can have a credit limit and bill due day, shown as used / available.
+- **Tax (salaried, Pakistan):** an estimate of the year's income tax from your recorded salary (tax year July–June) plus what you expect for the rest of the year, with the employer's deduction entered on each salary. Track other tax deducted at source (cash withdrawals, phone, internet, vehicle, property, bank profit), tag categories as donations, zakat or pension for deductions and credits, and see what's still to pay or due back, with a monthly set-aside. Filing dates and your own reminders (e.g. car token tax) show on the dashboard 30 days ahead and are emailed 14 and 3 days before.
+- **Committees (BC):** track each monthly installment, your turn and the pot. Payments leave your wallet but aren't expenses, and the pot isn't income, because it's your own money coming back. A share you hold **for a friend** (you pay the committee for both of you) is added with "Whose share is this? → A friend's", or from a committee's menu with **Add a friend's share**: you pay it, the app reminds you each month to **Collect** it back from them (Upcoming bills and the menu badge), and the pot is marked as given to them without touching your wallets. It's never your spending, income or savings; what they still owe you counts in your net worth.
+- **Goals & project payments:** save for something big (e.g. a Nikkah) with a target amount and date. List the project payments you're expecting and mark them **Received**: the full amount becomes income and you choose how much goes to the fund. The goal page shows what's saved, what's still coming, and how much you need each month.
 - **Custom categories:** add, rename, recolour, pick an icon, reorder, archive. Deleting a category that has expenses moves them to another one first. Manage them in Settings → Categories.
 - **Budgets:** a monthly limit per category or for all spending, with progress bars. You get a toast and an email the first time a budget passes 80% and 100% in a month.
 - **Recurring bills:** rent, internet, subscriptions (weekly, monthly or yearly, every N). Nothing is added by itself: when a bill is due it shows under Upcoming bills (and a red badge in the menu) with **Mark paid** (opens the expense form prefilled) or **Skip**. A bill due on the 31st stays on the 31st, or the last day of shorter months.
@@ -110,6 +116,46 @@ For production: `npm run build && npm start`.
 When you pay for something that someone will pay back **in full**, like groceries for home, record it as a **due** instead of an expense. Use **Add due** on the Dues page, or the **"Paid fully for someone else?"** link in the expense form, which carries over the amount, description and date you typed.
 
 Choose the person, **They owe me** or **I owe them**, the amount, what it was for, and the date. These dues are tagged **Not an expense** and don't appear in your expense totals or charts. Record, Settle all and Undo work on them just like on split dues, and they can be deleted from the Dues page.
+
+## How fixed payments and committees work
+
+- **Money you give and don't get back** (e.g. monthly support for family) is a Recurring bill. **Mark paid** turns it into an expense.
+- **A committee** has its own page. Paying records an installment and reduces the chosen wallet; receiving the pot adds to it. Neither touches your expense or income totals. Net worth includes the money sitting in committees, or subtracts what's still to pay back if you got the pot early.
+- **Left to spend** = income − fixed payments (paid or still due) − other spending. Each payment counts once, so marking one paid moves it from Due to Paid without changing the total, unless the amount paid was different. Nothing leaves a wallet until you mark it paid.
+- For a committee you joined earlier, enter **Installments already paid** so today's wallet balances aren't changed.
+
+## How goals work
+
+- **Saving** moves money from a wallet into the goal's fund, so it no longer looks spendable. It isn't an expense, and it still counts in net worth. "Already saved" with no wallet is for money that isn't counted in any wallet.
+- **Expected payments** aren't income until you press **Received**. If less arrives than expected, the rest can stay on the list.
+- **Paying from the fund** records a real expense that reduces the fund, not your wallets. Editing or deleting that expense updates the fund automatically. Progress toward the target stays the same, because the money was saved.
+- **Monthly need** = (target − saved − planned shares of payments due by the target date) ÷ months left, rounded up.
+- **Left to spend** shows money set aside this month as its own line, and expenses paid from a fund aren't counted again as other spending.
+- Income created by **Received** can only be changed by undoing it on the Goals page, so income and the fund stay in step.
+
+## How the portfolio works
+
+- **Cost** uses the average-cost method: a sale removes units at the average price paid so far, and the difference is your realized profit. A sale can never exceed what you held on that date, including when older transactions are edited or deleted.
+- **Silver and gold prices** come from two free services that need no API key: [gold-api.com](https://gold-api.com) (USD per ounce) and [open.er-api.com](https://open.er-api.com) (USD to PKR). They're refreshed at most every 6 hours; if they're unavailable, the last known rate is shown and marked as out of date.
+- These are international rates and often differ from the local sarafa rate. Set a **local premium %** on the investment to match it, or use **Update price**: a price you enter for today replaces the automatic one until tomorrow.
+- `MARKET_PRICE_URL` and `FX_RATE_URL` in `.env` can point to other sources (optional).
+- For purchases made before you started tracking, leave the wallet empty so today's balance isn't reduced.
+
+## How loans and net worth history work
+
+- Interest is worked out on the reducing balance: one month's interest = what's still owed × yearly rate ÷ 12. A loan of Rs. 100,000 at 12% with Rs. 10,000 installments: month 1 is Rs. 1,000 interest + Rs. 9,000 repaid, month 2 is Rs. 910 + Rs. 9,090.
+- "Money received in" adds the loan amount to a wallet. For a loan you were already paying, leave it empty and enter what you'd **already repaid**, so today's balances don't change.
+- The interest expense of a payment can't be edited or deleted on the Expenses page; undo the payment on the Loans page instead (latest first). Deleting a loan removes its payments and their interest expenses.
+- Credit cards are Card wallets: spending makes the balance negative, which already lowers your net worth.
+- Net worth is saved once per month (refreshed at most hourly while you use the app, and whenever you open Portfolio). Past months keep the last value saved in that month. **History starts when this feature was added;** earlier months can't be rebuilt.
+
+## How the tax estimate works
+
+- **Tax year:** 1 July to 30 June, named after the year it ends (TY2027 = Jul 2026 – Jun 2027).
+- **Salary:** enter what you received as the income amount and the employer's deduction in "Tax deducted by employer". Gross salary = both together. For months not recorded yet, the Tax page uses your last 3 months' average (editable on the page).
+- **Calculation:** taxable income = gross salary − zakat paid (s.60). Tax = slab tax (+ surcharge where it applies) − donation credit (s.61, up to 30% of taxable income) − pension/VPS credit (s.63, up to 20%), both at your average tax rate. Adjustable tax already deducted is then subtracted; final tax (e.g. on bank profit) is listed but not subtracted.
+- **Rates** live in `src/lib/tax-rates.ts`, one entry per tax year with its source. TY2026 and TY2027 salaried slabs are included (TY2027: Finance Act 2026, no salaried surcharge). Add the next year there after each budget; until then the latest known rates are used and the page says they're not confirmed.
+- **This is an estimate, not tax advice.** Confirm with a tax adviser before filing.
 
 ## How dates work
 

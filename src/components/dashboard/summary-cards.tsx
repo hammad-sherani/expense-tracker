@@ -24,6 +24,7 @@ const ICONS = {
   all: CalendarDays,
   income: Banknote,
   saved: PiggyBank,
+  out: ArrowUpRight,
 } as const;
 
 function Change({ value, label }: { value: number | null | undefined; label?: string }) {
@@ -52,18 +53,12 @@ function Change({ value, label }: { value: number | null | undefined; label?: st
 
 export function SummaryCards({ cards }: { cards: SummaryCard[] }) {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+    <div className={cn("grid grid-cols-1 gap-4 sm:grid-cols-2", cards.length > 4 ? "xl:grid-cols-5" : "xl:grid-cols-4")}>
       {cards.map((card, i) => {
         const Icon = ICONS[card.key as keyof typeof ICONS] ?? Wallet;
         const primary = i === 0;
         return (
-          <Card
-            key={card.key}
-            className={cn(
-              "gap-3 px-5 py-5 transition-shadow hover:shadow-sm",
-              primary && "sm:col-span-2 xl:col-span-1",
-            )}
-          >
+          <Card key={card.key} className="gap-3 px-5 py-5 transition-shadow hover:shadow-sm">
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium text-muted-foreground">{card.label}</p>
               <span
@@ -82,7 +77,7 @@ export function SummaryCards({ cards }: { cards: SummaryCard[] }) {
               {card.change !== undefined ? (
                 <Change value={card.change} label={card.changeLabel} />
               ) : (
-                <p className="truncate text-xs text-muted-foreground">{card.hint}</p>
+                <p className="text-xs text-pretty text-muted-foreground">{card.hint}</p>
               )}
             </div>
             {card.change !== undefined && <p className="-mt-2 truncate text-xs text-muted-foreground">{card.hint}</p>}

@@ -13,11 +13,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { WalletSelect } from "@/components/wallets/wallet-select";
 import { todayInput } from "@/lib/dates";
+import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { INCOME_TYPE_LABELS, INCOME_TYPES, type IncomeTypeValue } from "@/lib/wallets";
 import { createIncome, updateIncome } from "@/server/actions/income";
@@ -41,13 +42,15 @@ function IncomeForm({ income, onDone }: { income?: IncomeDTO; onDone: () => void
   const [walletId, setWalletId] = useState(income ? (income.wallet?.id ?? "") : fallbackWallet);
   const [date, setDate] = useState(income?.date ?? todayInput());
   const [notes, setNotes] = useState(income?.notes ?? "");
+  const [taxDeducted, setTaxDeducted] = useState(income?.taxDeducted ? String(income.taxDeducted) : "");
+  const gross = Number(amount || 0) + Number(taxDeducted || 0);
   const [errors, setErrors] = useState<Errors>({});
   const [isPending, startTransition] = useTransition();
   const clear = (k: string) => setErrors((e) => (e[k] ? { ...e, [k]: undefined } : e));
 
   const submit = () =>
     startTransition(async () => {
-      const values = { amount, source, type, walletId, date, notes };
+      const values = { amount, source, type, walletId, date, notes, taxDeducted: type === "SALARY" ? taxDeducted : "" };
       const result = income ? await updateIncome(income.id, values) : await createIncome(values);
       if (!result.ok) {
         setErrors(Object.fromEntries(Object.entries(result.fieldErrors ?? {}).map(([k, v]) => [k, v?.[0]])));
@@ -127,6 +130,37 @@ function IncomeForm({ income, onDone }: { income?: IncomeDTO; onDone: () => void
             ))}
           </div>
         </Field>
+
+        {type === "SALARY" && (
+          <Field data-invalid={Boolean(errors.taxDeducted)}>
+            <FieldLabel htmlFor="income-tax">
+              Tax deducted by employer <span className="font-normal text-muted-foreground">(optional)</span>
+            </FieldLabel>
+            <div className="relative">
+              <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground">Rs.</span>
+              <Input
+                id="income-tax"
+                inputMode="decimal"
+                placeholder="0"
+                value={taxDeducted}
+                onChange={(e) => {
+                  setTaxDeducted(sanitizeAmount(e.target.value));
+                  clear("taxDeducted");
+                }}
+                className="pl-11 tabular-nums"
+                aria-invalid={Boolean(errors.taxDeducted)}
+              />
+            </div>
+            {errors.taxDeducted ? (
+              <FieldError>{errors.taxDeducted}</FieldError>
+            ) : (
+              <FieldDescription>
+                From your payslip. Amount above is what you received
+                {Number(taxDeducted) > 0 && Number(amount) > 0 ? `, so your gross salary is ${formatCurrency(gross)}` : ""}.
+              </FieldDescription>
+            )}
+          </Field>
+        )}
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field data-invalid={Boolean(errors.date)}>

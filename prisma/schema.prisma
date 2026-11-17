@@ -59,6 +59,30 @@ enum WalletType {
   OTHER
 }
 
+enum AssetType {
+  MUTUAL_FUND
+  SILVER
+  GOLD
+  STOCK
+  OTHER
+}
+
+enum InvestmentTxnType {
+  BUY
+  SELL
+  DIVIDEND
+}
+
+enum PriceSource {
+  MANUAL
+  AUTO
+}
+
+enum GoalEntryType {
+  DEPOSIT
+  WITHDRAW
+}
+
 enum Frequency {
   WEEKLY
   MONTHLY
@@ -75,38 +99,53 @@ enum IncomeType {
 }
 
 model User {
-  id                 String             @id @default(auto()) @map("_id") @db.ObjectId
+  id                   String                @id @default(auto()) @map("_id") @db.ObjectId
   /// Lower-case, 3-20 chars of a-z, 0-9 and underscore.
-  username           String             @unique
+  username             String                @unique
   /// Lower-case email address.
-  email              String             @unique
-  passwordHash       String
-  role               Role               @default(USER)
+  email                String                @unique
+  passwordHash         String
+  role                 Role                  @default(USER)
   /// Set once the email OTP has been confirmed. Unverified users cannot log in.
-  emailVerified      DateTime?
+  emailVerified        DateTime?
   /// Bumped on password change / reset / block to log out every session. null = 0.
-  sessionVersion     Int?
+  sessionVersion       Int?
   /// Email a PDF report when a month ends. null = off.
-  monthlyReportEmail Boolean?
+  monthlyReportEmail   Boolean?
   /// "YYYY-MM" of the last monthly report emailed.
-  lastReportMonth    String?
+  lastReportMonth      String?
   /// Set by an admin; blocked users can't log in.
-  blockedAt          DateTime?
-  lastActiveAt       DateTime?
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-  expenses           Expense[]
-  emailOtps          EmailOtp[]
-  friends            Friend[]
-  dues               Due[]
-  duePayments        DuePayment[]
-  categories         Category[]
-  wallets            Wallet[]
-  incomes            Income[]
-  transfers          Transfer[]
-  budgets            Budget[]
-  recurring          RecurringExpense[]
-  groups             Group[]
+  blockedAt            DateTime?
+  lastActiveAt         DateTime?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  expenses             Expense[]
+  emailOtps            EmailOtp[]
+  friends              Friend[]
+  dues                 Due[]
+  duePayments          DuePayment[]
+  categories           Category[]
+  wallets              Wallet[]
+  incomes              Income[]
+  transfers            Transfer[]
+  walletAdjustments    WalletAdjustment[]
+  budgets              Budget[]
+  recurring            RecurringExpense[]
+  groups               Group[]
+  investments          Investment[]
+  investmentTxns       InvestmentTxn[]
+  committees           Committee[]
+  committeePayments    CommitteePayment[]
+  committeeCollections CommitteeCollection[]
+  goals                Goal[]
+  goalEntries          GoalEntry[]
+  expectedPayments     ExpectedPayment[]
+  loans                Loan[]
+  loanPayments         LoanPayment[]
+  netWorthSnapshots    NetWorthSnapshot[]
+  taxWithholdings      TaxWithholding[]
+  reminders            Reminder[]
+  reminderLogs         ReminderLog[]
 
   @@index([role, createdAt])
   @@map("users")
@@ -157,6 +196,14 @@ model Expense {
   /// The recurring bill this expense paid, if any.
   recurringId    String?           @db.ObjectId
   recurring      RecurringExpense? @relation(fields: [recurringId], references: [id], onDelete: SetNull)
+  /// Paid from this savings goal instead of a wallet.
+  goalId         String?           @db.ObjectId
+  goal           Goal?             @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  /// Set when this expense is the interest part of a loan payment.
+  /// Loan payments whose interest this records (at most one).
+  loanPayments   LoanPayment[]
+  /// Leave this one out of the tax deduction its category gives (e.g. not an approved institution).
+  taxExcluded    Boolean?
   notes          String?
   /// Whole bill when the expense is split with friends (null = not split).
   /// `amount` is always *my share*, so statistics only count what I spent.
@@ -176,15 +223,16 @@ model Expense {
 
 /// A person the user splits bills with. Just a name, not an app account.
 model Friend {
-  id        String    @id @default(auto()) @map("_id") @db.ObjectId
-  userId    String    @db.ObjectId
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name      String
+  id              String      @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String      @db.ObjectId
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
   /// Lower-cased name, unique per user.
-  nameKey   String
-  createdAt DateTime  @default(now())
-  dues      Due[]
-  paidFor   Expense[] @relation("PaidBy")
+  nameKey         String
+  createdAt       DateTime    @default(now())
+  dues            Due[]
+  paidFor         Expense[]   @relation("PaidBy")
+  committeeShares Committee[]
 
   @@unique([userId, nameKey])
   @@map("friends")
@@ -257,6 +305,8 @@ model Category {
   sortOrder  Int                @default(0)
   /// Archived categories are hidden from pickers but keep their expenses.
   archivedAt DateTime?
+  /// Expenses in this category count towards a tax deduction or credit.
+  taxTag     TaxTag?
   createdAt  DateTime           @default(now())
   expenses   Expense[]
   budgets    Budget[]
@@ -268,25 +318,36 @@ model Category {
 
 /// Where money is kept: cash, a bank account, JazzCash, a card...
 model Wallet {
-  id             String             @id @default(auto()) @map("_id") @db.ObjectId
-  userId         String             @db.ObjectId
-  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name           String
-  nameKey        String
-  type           WalletType
+  id                   String                @id @default(auto()) @map("_id") @db.ObjectId
+  userId               String                @db.ObjectId
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                 String
+  nameKey              String
+  type                 WalletType
   /// Balance before anything was recorded in the app.
-  openingBalance Float              @default(0)
-  color          String
-  sortOrder      Int                @default(0)
-  archivedAt     DateTime?
-  createdAt      DateTime           @default(now())
-  expenses       Expense[]
-  incomes        Income[]
-  dues           Due[]
-  duePayments    DuePayment[]
-  transfersOut   Transfer[]         @relation("TransferFrom")
-  transfersIn    Transfer[]         @relation("TransferTo")
-  recurring      RecurringExpense[]
+  openingBalance       Float                 @default(0)
+  /// Cards only: credit limit, and the day of the month the bill is due.
+  creditLimit          Float?
+  dueDay               Int?
+  color                String
+  sortOrder            Int                   @default(0)
+  archivedAt           DateTime?
+  createdAt            DateTime              @default(now())
+  expenses             Expense[]
+  incomes              Income[]
+  dues                 Due[]
+  duePayments          DuePayment[]
+  transfersOut         Transfer[]            @relation("TransferFrom")
+  transfersIn          Transfer[]            @relation("TransferTo")
+  recurring            RecurringExpense[]
+  investmentTxns       InvestmentTxn[]
+  committeePayments    CommitteePayment[]
+  committeeCollections CommitteeCollection[]
+  committeePayouts     Committee[]
+  goalEntries          GoalEntry[]
+  loansReceived        Loan[]
+  loanPayments         LoanPayment[]
+  adjustments          WalletAdjustment[]
 
   @@unique([userId, nameKey])
   @@map("wallets")
@@ -311,21 +372,43 @@ model Transfer {
   @@map("transfers")
 }
 
-model Income {
-  id        String     @id @default(auto()) @map("_id") @db.ObjectId
-  userId    String     @db.ObjectId
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+/// A correction to a wallet's balance (counted cash, bank charges, a missed entry).
+/// + adds money, − takes it out. Not income or spending.
+model WalletAdjustment {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  walletId  String   @db.ObjectId
+  wallet    Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
   amount    Float
-  /// Where it came from, e.g. "October salary".
-  source    String
-  type      IncomeType
-  walletId  String?    @db.ObjectId
-  wallet    Wallet?    @relation(fields: [walletId], references: [id], onDelete: SetNull)
   /// Calendar day (UTC midnight).
   date      DateTime
-  notes     String?
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([walletId, date])
+  @@index([userId, date])
+  @@map("wallet_adjustments")
+}
+
+model Income {
+  id           String           @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String           @db.ObjectId
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount       Float
+  /// Where it came from, e.g. "October salary".
+  source       String
+  type         IncomeType
+  walletId     String?          @db.ObjectId
+  wallet       Wallet?          @relation(fields: [walletId], references: [id], onDelete: SetNull)
+  /// Calendar day (UTC midnight).
+  date         DateTime
+  notes        String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  /// Tax the employer deducted from this salary (amount is what was received).
+  /// Tax the employer deducted (at most one).
+  withholdings TaxWithholding[]
 
   @@index([userId, date])
   @@map("incomes")
@@ -413,4 +496,380 @@ model Group {
 
   @@index([userId])
   @@map("groups")
+}
+
+/// One thing the user is invested in: a mutual fund, silver, a stock...
+model Investment {
+  id         String            @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String            @db.ObjectId
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  type       AssetType
+  /// "units" | "gram" | "tola" | "share". Fixed once created.
+  unit       String
+  /// Silver/gold only: follow the international rate automatically.
+  autoPrice  Boolean           @default(false)
+  /// Added to the international rate to match the local (sarafa) rate.
+  premiumPct Float             @default(0)
+  notes      String?
+  archivedAt DateTime?
+  createdAt  DateTime          @default(now())
+  txns       InvestmentTxn[]
+  prices     InvestmentPrice[]
+
+  @@index([userId])
+  @@map("investments")
+}
+
+/// A buy, sale or dividend. Moves wallet money when `walletId` is set, but is never an expense or income.
+model InvestmentTxn {
+  id           String            @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String            @db.ObjectId
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  investmentId String            @db.ObjectId
+  investment   Investment        @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+  type         InvestmentTxnType
+  /// Calendar day (UTC midnight).
+  date         DateTime
+  /// 0 for a dividend.
+  units        Float
+  /// Per unit, before fees.
+  price        Float
+  /// Money that actually moved: buy = cost + fees, sell = proceeds - fees.
+  amount       Float
+  fees         Float             @default(0)
+  walletId     String?           @db.ObjectId
+  wallet       Wallet?           @relation(fields: [walletId], references: [id], onDelete: SetNull)
+  note         String?
+  createdAt    DateTime          @default(now())
+
+  @@index([investmentId, date])
+  @@index([userId, walletId])
+  @@map("investment_txns")
+}
+
+/// Price history of an investment: at most one manual and one automatic price per day.
+model InvestmentPrice {
+  id           String      @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String      @db.ObjectId
+  investmentId String      @db.ObjectId
+  investment   Investment  @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+  /// Calendar day (UTC midnight).
+  date         DateTime
+  /// Per unit.
+  price        Float
+  source       PriceSource
+  createdAt    DateTime    @default(now())
+
+  @@unique([investmentId, date, source])
+  @@map("investment_prices")
+}
+
+/// Latest international metal rate, shared by all users so the price APIs are called rarely.
+model MarketQuote {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  /// "XAG" (silver) or "XAU" (gold).
+  symbol      String   @unique
+  usdPerOunce Float
+  pkrPerUsd   Float
+  pkrPerGram  Float
+  fetchedAt   DateTime
+
+  @@map("market_quotes")
+}
+
+/// A committee (BC): everyone pays monthly and each member gets the whole pot once.
+/// The money comes back, so payments are savings: not expenses, and the pot is not income.
+model Committee {
+  id             String                @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String                @db.ObjectId
+  user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  monthlyAmount  Float
+  /// Number of members, which is also the number of monthly installments.
+  members        Int
+  /// Which month (1 = first) the user gets the pot.
+  turn           Int
+  /// First installment (UTC midnight). Later ones keep its day of the month.
+  startDate      DateTime
+  /// Set when the pot was received.
+  payoutAt       DateTime?
+  payoutAmount   Float?
+  payoutWalletId String?               @db.ObjectId
+  payoutWallet   Wallet?               @relation(fields: [payoutWalletId], references: [id], onDelete: SetNull)
+  notes          String?
+  /// Set when this share is a friend's: the user pays it and collects it back from them each month,
+  /// and the pot passes through to them. Not the user's spending or savings.
+  forFriendId    String?               @db.ObjectId
+  forFriend      Friend?               @relation(fields: [forFriendId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  archivedAt     DateTime?
+  createdAt      DateTime              @default(now())
+  payments       CommitteePayment[]
+  collections    CommitteeCollection[]
+
+  @@index([userId])
+  @@map("committees")
+}
+
+/// One monthly installment paid into a committee.
+model CommitteePayment {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String    @db.ObjectId
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  committeeId String    @db.ObjectId
+  committee   Committee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  /// 1 = first installment.
+  installment Int
+  /// Calendar day it was paid (UTC midnight).
+  date        DateTime
+  amount      Float
+  walletId    String?   @db.ObjectId
+  wallet      Wallet?   @relation(fields: [walletId], references: [id], onDelete: SetNull)
+  note        String?
+  createdAt   DateTime  @default(now())
+
+  @@unique([committeeId, installment])
+  @@index([userId, walletId])
+  @@index([userId, date])
+  @@map("committee_payments")
+}
+
+/// Money being saved for something (e.g. a Nikkah). The fund is set aside from wallets.
+model Goal {
+  id           String            @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String            @db.ObjectId
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  targetAmount Float
+  /// Calendar day (UTC midnight).
+  targetDate   DateTime?
+  notes        String?
+  archivedAt   DateTime?
+  createdAt    DateTime          @default(now())
+  entries      GoalEntry[]
+  expected     ExpectedPayment[]
+  expenses     Expense[]
+
+  @@index([userId])
+  @@map("goals")
+}
+
+/// Money moved into or out of a goal's fund. Spending from the fund is read from Expense.goalId.
+model GoalEntry {
+  id                String           @id @default(auto()) @map("_id") @db.ObjectId
+  userId            String           @db.ObjectId
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goalId            String           @db.ObjectId
+  goal              Goal             @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  type              GoalEntryType
+  amount            Float
+  /// Calendar day (UTC midnight).
+  date              DateTime
+  /// No wallet means money from outside the wallets (e.g. savings from before tracking).
+  walletId          String?          @db.ObjectId
+  wallet            Wallet?          @relation(fields: [walletId], references: [id], onDelete: SetNull)
+  expectedPaymentId String?          @db.ObjectId
+  expectedPayment   ExpectedPayment? @relation(fields: [expectedPaymentId], references: [id], onDelete: SetNull)
+  note              String?
+  createdAt         DateTime         @default(now())
+
+  @@index([goalId, date])
+  @@index([userId, walletId])
+  @@index([userId, date])
+  @@map("goal_entries")
+}
+
+/// Money the user expects to receive, such as a project payment.
+model ExpectedPayment {
+  id             String      @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String      @db.ObjectId
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  source         String
+  amount         Float
+  expectedDate   DateTime
+  goalId         String?     @db.ObjectId
+  goal           Goal?       @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  /// Planned share for the goal (null = all of it).
+  goalAmount     Float?
+  receivedAt     DateTime?
+  receivedAmount Float?
+  /// The Income created when this was received.
+  incomeId       String?     @db.ObjectId
+  /// Set on a payment created for the rest of a partly received one.
+  restOfId       String?     @db.ObjectId
+  notes          String?
+  createdAt      DateTime    @default(now())
+  entries        GoalEntry[]
+
+  @@index([userId, expectedDate])
+  @@index([userId, incomeId])
+  @@map("expected_payments")
+}
+
+/// Money the user borrowed. Repaying the loan amount isn't spending; only interest is.
+model Loan {
+  id                 String        @id @default(auto()) @map("_id") @db.ObjectId
+  userId             String        @db.ObjectId
+  user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name               String
+  lender             String?
+  principal          Float
+  /// Yearly interest rate in percent (0 = interest free).
+  annualRatePct      Float         @default(0)
+  monthlyInstallment Float
+  /// First (or next, for an older loan) installment date, UTC midnight.
+  startDate          DateTime
+  /// Where the borrowed money went. Empty for older loans so today's balance isn't changed.
+  receivedWalletId   String?       @db.ObjectId
+  receivedWallet     Wallet?       @relation(fields: [receivedWalletId], references: [id], onDelete: SetNull)
+  /// Loan amount repaid before it was tracked here.
+  alreadyRepaid      Float         @default(0)
+  notes              String?
+  archivedAt         DateTime?
+  createdAt          DateTime      @default(now())
+  payments           LoanPayment[]
+
+  @@index([userId])
+  @@map("loans")
+}
+
+model LoanPayment {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId        String   @db.ObjectId
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  loanId        String   @db.ObjectId
+  loan          Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  /// Calendar day (UTC midnight).
+  date          DateTime
+  amount        Float
+  principalPart Float
+  interestPart  Float
+  walletId      String?  @db.ObjectId
+  wallet        Wallet?  @relation(fields: [walletId], references: [id], onDelete: SetNull)
+  /// The expense recording the interest part.
+  expenseId     String?  @db.ObjectId
+  expense       Expense? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now())
+
+  @@index([loanId, date])
+  @@index([expenseId])
+  @@index([userId, walletId])
+  @@index([userId, date])
+  @@map("loan_payments")
+}
+
+/// Net worth at the end of a month (the current month is refreshed daily).
+model NetWorthSnapshot {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// "YYYY-MM"
+  month       String
+  total       Float
+  cash        Float
+  investments Float
+  committees  Float
+  goals       Float
+  owedToMe    Float
+  iOwe        Float
+  loans       Float
+  takenAt     DateTime @default(now())
+
+  @@unique([userId, month])
+  @@map("net_worth_snapshots")
+}
+
+/// Money a friend gave back for their committee share (one per installment).
+model CommitteeCollection {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String    @db.ObjectId
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  committeeId String    @db.ObjectId
+  committee   Committee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  /// 1 = first installment.
+  installment Int
+  /// Calendar day it was received (UTC midnight).
+  date        DateTime
+  amount      Float
+  walletId    String?   @db.ObjectId
+  wallet      Wallet?   @relation(fields: [walletId], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+
+  @@unique([committeeId, installment])
+  @@index([userId, walletId])
+  @@index([userId, date])
+  @@map("committee_collections")
+}
+
+enum TaxTag {
+  DONATION
+  ZAKAT
+  PENSION
+}
+
+enum WithholdingType {
+  SALARY
+  CASH_WITHDRAWAL
+  MOBILE
+  INTERNET
+  ELECTRICITY
+  VEHICLE
+  PROPERTY
+  PROFIT_ON_DEBT
+  OTHER
+}
+
+/// Tax deducted at source (by an employer, bank, phone company...).
+model TaxWithholding {
+  id         String          @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String          @db.ObjectId
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Calendar day (UTC midnight).
+  date       DateTime
+  type       WithholdingType
+  section    String?
+  amount     Float
+  /// Counts against the year's tax (false = final tax).
+  adjustable Boolean         @default(true)
+  note       String?
+  /// Set for tax deducted from a recorded salary; removed with it.
+  incomeId   String?         @db.ObjectId
+  income     Income?         @relation(fields: [incomeId], references: [id], onDelete: Cascade)
+  createdAt  DateTime        @default(now())
+
+  @@index([userId, date])
+  @@index([incomeId])
+  @@map("tax_withholdings")
+}
+
+/// The user's own reminder, e.g. vehicle token tax.
+model Reminder {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  /// Calendar day (UTC midnight).
+  date      DateTime
+  /// Comes back on the same day every year.
+  yearly    Boolean  @default(false)
+  notes     String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, date])
+  @@map("reminders")
+}
+
+/// One reminder email sent, so it's never sent twice.
+model ReminderLog {
+  id     String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId String   @db.ObjectId
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// e.g. "return:2027" or "reminder:<id>:2027-03-01".
+  key    String
+  /// "14d" or "3d".
+  kind   String
+  sentAt DateTime @default(now())
+
+  @@unique([userId, key, kind])
+  @@map("reminder_logs")
 }

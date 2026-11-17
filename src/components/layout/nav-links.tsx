@@ -2,12 +2,17 @@
 
 import {
   Banknote,
+  Calculator,
   ChartPie,
+  Flag,
   HandCoins,
+  Landmark,
   LayoutDashboard,
+  PiggyBank,
   ReceiptText,
   Repeat,
   Target,
+  TrendingUp,
   Users,
   Wallet,
 } from "lucide-react";
@@ -26,7 +31,7 @@ type NavItem = {
   /** Carry the selected month (?period=) to this page. */
   keepPeriod: boolean;
   /** Show a count from the user's lookups next to the label. */
-  badge?: "dueBills";
+  badge?: "dueBills" | "dueCommittees" | "dueLoans";
 };
 type NavSection = { label?: string; items: NavItem[] };
 
@@ -44,6 +49,8 @@ const NAV_SECTIONS: Record<NavVariant, NavSection[]> = {
         { href: "/expenses", label: "Expenses", icon: ReceiptText, keepPeriod: true },
         { href: "/income", label: "Income", icon: Banknote, keepPeriod: true },
         { href: "/wallets", label: "Wallets", icon: Wallet, keepPeriod: false },
+        { href: "/portfolio", label: "Portfolio", icon: TrendingUp, keepPeriod: false },
+        { href: "/loans", label: "Loans & cards", icon: Landmark, keepPeriod: false, badge: "dueLoans" },
       ],
     },
     {
@@ -51,7 +58,13 @@ const NAV_SECTIONS: Record<NavVariant, NavSection[]> = {
       items: [
         { href: "/budgets", label: "Budgets", icon: Target, keepPeriod: true },
         { href: "/recurring", label: "Recurring bills", icon: Repeat, keepPeriod: false, badge: "dueBills" },
+        { href: "/committees", label: "Committees", icon: PiggyBank, keepPeriod: false, badge: "dueCommittees" },
+        { href: "/goals", label: "Goals", icon: Flag, keepPeriod: false },
       ],
+    },
+    {
+      label: "Tax & reports",
+      items: [{ href: "/tax", label: "Tax", icon: Calculator, keepPeriod: false }],
     },
     {
       label: "People",

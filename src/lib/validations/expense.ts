@@ -31,6 +31,8 @@ export const expenseFormSchema = z.object({
   walletId: z.union([z.string().regex(OBJECT_ID_RE, "Choose a wallet"), z.literal("")]),
   /** Trip/group the bill belongs to ("" = none). */
   groupId: z.union([z.string().regex(OBJECT_ID_RE, "Choose a group"), z.literal("")]),
+  /** Paid from this savings goal instead of a wallet ("" = none). */
+  goalId: z.union([z.string().regex(OBJECT_ID_RE, "Choose a goal"), z.literal("")]),
   notes: z.string().trim().max(1000, "Notes must be 1000 characters or fewer"),
   /**
    * Splitting the bill with friends. When enabled, `amount` is the WHOLE bill;
@@ -46,6 +48,10 @@ export const expenseFormSchema = z.object({
     dueDate: z.union([z.string().refine(isValidDateInput, "Enter a valid date"), z.literal("")]),
   }),
 }).superRefine((v, ctx) => {
+  if (v.goalId && v.split.enabled) {
+    ctx.addIssue({ code: "custom", path: ["split", "participants"], message: "A payment from a fund can't be split" });
+    return;
+  }
   if (!v.split.enabled) return;
   const { split } = v;
   const money = (s: string) => AMOUNT_RE.test(s);

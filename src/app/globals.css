@@ -149,3 +149,30 @@
 .recharts-surface:focus {
   outline: none;
 }
+
+/* A very thin, barely visible scrollbar with no track or arrow buttons. */
+.scrollbar-subtle::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+.scrollbar-subtle::-webkit-scrollbar-track,
+.scrollbar-subtle::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.scrollbar-subtle::-webkit-scrollbar-button {
+  display: none;
+}
+.scrollbar-subtle::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: color-mix(in oklab, var(--muted-foreground) 25%, transparent);
+}
+.scrollbar-subtle:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--muted-foreground) 45%, transparent);
+}
+/* Firefox only: Chrome ignores the ::-webkit-scrollbar rules above once scrollbar-color is set. */
+@supports not selector(::-webkit-scrollbar) {
+  .scrollbar-subtle {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--muted-foreground) 25%, transparent) transparent;
+  }
+}

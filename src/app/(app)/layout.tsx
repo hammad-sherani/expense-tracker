@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { Suspense } from "react";
 import { ExpenseUIProvider } from "@/components/expenses/expense-dialogs";
 import { AppHeader } from "@/components/layout/app-header";
@@ -6,22 +7,32 @@ import { LookupsProvider, LookupsSync } from "@/components/layout/lookups";
 import { UserMenu, UserMenuSkeleton } from "@/components/layout/user-menu";
 import { requireUser } from "@/lib/auth/dal";
 import { lastUsedWalletId, listCategories, listGroupOptions, listWallets } from "@/server/queries/lookups";
+import { dueCommitteeCount, listCommittees } from "@/server/queries/committees";
+import { dueLoanCount, listLoans } from "@/server/queries/loans";
 import { dueBillCount } from "@/server/queries/recurring";
+import { refreshNetWorthSnapshot } from "@/server/net-worth-snapshot";
+import { scheduleDeadlineEmails } from "@/server/tax-deadlines";
 import { scheduleMonthlyReport } from "@/server/reports/monthly-report";
 
 /** Loads the user's categories and wallets for client forms (quick add, filters). */
 async function LookupsLoader() {
   const user = await requireUser();
-  const [categories, wallets, lastWalletId, groups, dueBills] = await Promise.all([
+  const [categories, wallets, lastWalletId, groups, dueBills, committees, loans] = await Promise.all([
     listCategories(user.id),
     listWallets(user.id),
     lastUsedWalletId(user.id),
     listGroupOptions(user.id),
     dueBillCount(user.id),
+    listCommittees(user.id),
+    listLoans(user.id),
     // Emails last month's PDF once, if the user turned it on (sent after the response).
     scheduleMonthlyReport(user).catch((e) => console.error("monthly report check failed", e)),
+    // Emails tax-date and reminder notices 14 and 3 days before (once each).
+    scheduleDeadlineEmails(user).catch((e) => console.error("deadline email check failed", e)),
   ]);
-  return <LookupsSync data={{ categories, wallets, lastWalletId, groups, dueBills }} />;
+  // Keeps this month's net worth history point fresh (at most once a day), after the response.
+  after(() => refreshNetWorthSnapshot(user.id).catch((e) => console.error("net worth snapshot failed", e)));
+  return <LookupsSync data={{ categories, wallets, lastWalletId, groups, dueBills, dueCommittees: dueCommitteeCount(committees), dueLoans: dueLoanCount(loans) }} />;
 }
 
 /** Shell for regular users: expense tracker navigation, quick add and dialogs. */

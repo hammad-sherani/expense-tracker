@@ -36,8 +36,13 @@ export const walletSchema = z.object({
     .trim()
     .regex(SIGNED_AMOUNT_RE, "Enter a valid amount (a credit card can be negative)")
     .refine((v) => Math.abs(Number(v)) <= MAX_AMOUNT, "Amount is too large"),
+  /** Cards only. "" = not set. */
+  creditLimit: z.union([amountSchema, z.literal("")]).optional(),
+  dueDay: z
+    .union([z.literal(""), z.coerce.number({ error: "Enter a day" }).int("Whole numbers only").min(1, "1 to 31").max(31, "1 to 31")])
+    .optional(),
 });
-export type WalletValues = z.infer<typeof walletSchema>;
+export type WalletValues = z.input<typeof walletSchema>;
 
 export const transferSchema = z
   .object({
@@ -50,6 +55,26 @@ export const transferSchema = z
   .refine((v) => v.fromWalletId !== v.toWalletId, { path: ["toWalletId"], message: "Choose a different wallet" });
 export type TransferValues = z.infer<typeof transferSchema>;
 
+/** CREDIT / DEBIT: add or take out `amount`. SET: `amount` is what the balance really is now. */
+export const ADJUST_MODES = ["SET", "CREDIT", "DEBIT"] as const;
+export const adjustmentSchema = z
+  .object({
+    walletId: z.string().regex(OBJECT_ID_RE, "Choose a wallet"),
+    mode: z.enum(ADJUST_MODES),
+    amount: z.string().trim().min(1, "Amount is required"),
+    date: dateSchema,
+    note: z.string().trim().max(200, "Use 200 characters or fewer"),
+  })
+  .superRefine((v, ctx) => {
+    const r = v.mode === "SET" ? SIGNED_AMOUNT_RE.test(v.amount) && Math.abs(Number(v.amount)) <= MAX_AMOUNT : amountSchema.safeParse(v.amount).success;
+    if (!r) {
+      const message =
+        v.mode === "SET" ? "Enter a valid amount (it can be negative, up to 2 decimals)" : (amountSchema.safeParse(v.amount).error?.issues[0]?.message ?? "Enter a valid amount");
+      ctx.addIssue({ code: "custom", path: ["amount"], message });
+    }
+  });
+export type AdjustmentValues = z.infer<typeof adjustmentSchema>;
+
 export const incomeFormSchema = z.object({
   amount: amountSchema,
   source: z.string().trim().min(2, "Enter at least 2 characters").max(200, "Use 200 characters or fewer"),
@@ -57,8 +82,15 @@ export const incomeFormSchema = z.object({
   walletId: optionalId("Choose a wallet"),
   date: dateSchema,
   notes: z.string().trim().max(1000, "Use 1000 characters or fewer"),
+  /** Salary only: tax the employer deducted ("" = none). The amount is what was received. */
+  taxDeducted: z
+    .string()
+    .trim()
+    .refine((v) => v === "" || AMOUNT_RE.test(v), "Enter a valid amount (numbers only, up to 2 decimals)")
+    .refine((v) => Number(v || 0) <= MAX_AMOUNT, "Amount is too large")
+    .optional(),
 });
-export type IncomeFormValues = z.infer<typeof incomeFormSchema>;
+export type IncomeFormValues = z.input<typeof incomeFormSchema>;
 
 export const objectId = z.string().regex(OBJECT_ID_RE, "Invalid id");
 export const optionalWalletId = optionalId("Choose a wallet");

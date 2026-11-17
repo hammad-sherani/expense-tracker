@@ -9,7 +9,10 @@ import { INCOME_TYPES } from "@/lib/wallets";
 import { toWalletRef } from "@/server/queries/expenses";
 import type { IncomeDTO, IncomeListResult } from "@/types";
 
-export const incomeInclude = { wallet: { select: { id: true, name: true, type: true, color: true } } } satisfies Prisma.IncomeInclude;
+export const incomeInclude = {
+  wallet: { select: { id: true, name: true, type: true, color: true } },
+  withholdings: { select: { amount: true }, take: 1 },
+} satisfies Prisma.IncomeInclude;
 type IncomeRow = Prisma.IncomeGetPayload<{ include: typeof incomeInclude }>;
 
 export function toIncomeDTO(i: IncomeRow): IncomeDTO {
@@ -21,6 +24,7 @@ export function toIncomeDTO(i: IncomeRow): IncomeDTO {
     wallet: toWalletRef(i.wallet),
     date: toDateInput(i.date),
     notes: i.notes,
+    taxDeducted: i.withholdings[0]?.amount ?? null,
     createdAt: i.createdAt.toISOString(),
   };
 }

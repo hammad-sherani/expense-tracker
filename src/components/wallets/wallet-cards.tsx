@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, ArchiveRestore, ArrowLeftRight, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowLeftRight, MoreVertical, Pencil, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { AdjustDialog } from "@/components/wallets/adjust-dialog";
 import { TransferDialog } from "@/components/wallets/transfer-dialog";
 import { WalletDialog } from "@/components/wallets/wallet-dialog";
 import { formatCurrency } from "@/lib/format";
@@ -43,6 +44,7 @@ export function WalletHeaderActions() {
 export function WalletMenu({ wallet, align = "end" }: { wallet: WalletDTO; align?: "start" | "end" }) {
   const [editing, setEditing] = useState(false);
   const [moving, setMoving] = useState(false);
+  const [adjusting, setAdjusting] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const run = (fn: () => Promise<{ ok: boolean; error?: string; message?: string }>) =>
@@ -71,6 +73,12 @@ export function WalletMenu({ wallet, align = "end" }: { wallet: WalletDTO; align
               Move money from here
             </DropdownMenuItem>
           )}
+          {!wallet.archived && (
+            <DropdownMenuItem onSelect={() => setAdjusting(true)}>
+              <SlidersHorizontal />
+              Adjust balance
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => run(() => setWalletArchived(wallet.id, !wallet.archived))}>
             {wallet.archived ? <ArchiveRestore /> : <Archive />}
@@ -84,6 +92,7 @@ export function WalletMenu({ wallet, align = "end" }: { wallet: WalletDTO; align
       </DropdownMenu>
       <WalletDialog open={editing} onOpenChange={setEditing} wallet={wallet} />
       <TransferDialog open={moving} onOpenChange={setMoving} fromId={wallet.id} />
+      <AdjustDialog open={adjusting} onOpenChange={setAdjusting} wallet={wallet} />
     </>
   );
 }

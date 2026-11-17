@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, CalendarDays, Clock, CreditCard, Loader2, Pencil, StickyNote, Trash2, Users } from "lucide-react";
+import { ArrowRight, CalendarDays, Clock, CreditCard, Flag, Loader2, Pencil, StickyNote, Trash2, Users } from "lucide-react";
 import Link from "next/link";
 import { createContext, useCallback, useContext, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -47,6 +47,8 @@ export type CreateOptions = {
   defaults?: Partial<ExpenseFormValues>;
   /** Paying a recurring bill. */
   recurringId?: string;
+  /** Savings goal name, when paying from its fund. */
+  fundName?: string;
   title?: string;
   description?: string;
 };
@@ -131,6 +133,7 @@ export function ExpenseUIProvider({ children }: { children: React.ReactNode }) {
               expense={editing}
               defaults={create?.defaults}
               recurringId={create?.recurringId}
+              fundName={editing?.goal?.name ?? create?.fundName}
               onSuccess={handleSaved}
               onCancel={() => setForm({ open: false })}
             />
@@ -222,15 +225,24 @@ function ExpenseDetailsSheet({
                     year: "numeric",
                   })}
                 </DetailRow>
-                <DetailRow icon={CreditCard} label="Wallet">
-                  {expense.wallet ? (
-                    expense.wallet.name
-                  ) : expense.paymentMethod ? (
-                    PAYMENT_METHOD_LABELS[expense.paymentMethod]
-                  ) : (
-                    <span className="text-muted-foreground">Not specified</span>
-                  )}
-                </DetailRow>
+                {!expense.goal && (
+                  <DetailRow icon={CreditCard} label="Wallet">
+                    {expense.wallet ? (
+                      expense.wallet.name
+                    ) : expense.paymentMethod ? (
+                      PAYMENT_METHOD_LABELS[expense.paymentMethod]
+                    ) : (
+                      <span className="text-muted-foreground">Not specified</span>
+                    )}
+                  </DetailRow>
+                )}
+                {expense.goal && (
+                  <DetailRow icon={Flag} label="Paid from fund">
+                    <Link href={`/goals/${expense.goal.id}`} className="font-medium text-primary hover:underline">
+                      {expense.goal.name}
+                    </Link>
+                  </DetailRow>
+                )}
                 {expense.group && (
                   <DetailRow icon={Users} label="Group">
                     <Link href={`/groups/${expense.group.id}`} className="font-medium text-primary hover:underline">

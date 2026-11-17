@@ -77,6 +77,8 @@ export async function deleteFriend(id: string): Promise<ActionResult> {
     if (dues.some((d) => Math.round((d.amount - d.paidAmount) * 100) > 0)) {
       return { ok: false, error: "Settle everything with this friend before removing them." };
     }
+    const shares = await db.committee.count({ where: { userId: user.id, forFriendId: idResult.data } });
+    if (shares > 0) return { ok: false, error: "This person has a committee share. Delete that committee first." };
     await db.friend.delete({ where: { id: idResult.data, userId: user.id } });
     revalidatePath("/", "layout");
     refresh();

@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { PageHeaderSkeleton } from "@/components/dashboard/dashboard-skeleton";
 import { Pagination } from "@/components/expenses/pagination";
 import { AddIncomeButton, IncomeFilters, IncomeList } from "@/components/income/income-list";
+import { MonthPlanCard } from "@/components/income/month-plan-card";
 import { PeriodPicker } from "@/components/period/period-picker";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PendingContent } from "@/components/shared/navigation-transition";
@@ -17,6 +18,7 @@ import { formatCurrency, formatPercent, roundMoney } from "@/lib/format";
 import { db } from "@/lib/db";
 import { periodWhere } from "@/server/queries/expenses";
 import { listIncome, parseIncomeListParams } from "@/server/queries/income";
+import { getMonthPlan } from "@/server/queries/month-plan";
 
 export const metadata: Metadata = { title: "Income" };
 
@@ -49,9 +51,10 @@ async function Income({ searchParams }: { searchParams: PageProps<"/income">["se
   const period = parsePeriod(sp.period);
   const periodParam = periodToParam(period);
   const params = parseIncomeListParams(sp);
-  const [result, spent] = await Promise.all([
+  const [result, spent, plan] = await Promise.all([
     listIncome(user.id, period, params),
     db.expense.aggregate({ where: { userId: user.id, ...periodWhere(period) }, _sum: { amount: true } }),
+    period.kind === "month" ? getMonthPlan(user.id, period.year, period.month) : null,
   ]);
   const label = periodLabel(period);
   const expenses = roundMoney(spent._sum.amount ?? 0);
@@ -87,6 +90,8 @@ async function Income({ searchParams }: { searchParams: PageProps<"/income">["se
             tone={rate !== null && rate < 0 ? "bad" : undefined}
           />
         </Card>
+
+        {plan && plan.items.length > 0 && <MonthPlanCard plan={plan} />}
 
         <IncomeFilters q={params.q} type={params.type} />
 

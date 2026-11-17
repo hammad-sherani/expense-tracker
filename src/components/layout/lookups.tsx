@@ -14,11 +14,15 @@ export type Lookups = {
   groups: GroupOption[];
   /** Recurring bills due today or overdue. */
   dueBills: number;
+  /** Committees with an installment due today or overdue. */
+  dueCommittees: number;
+  /** Loans with an installment due today or overdue. */
+  dueLoans: number;
 };
 
 type Ctx = Lookups & { ready: boolean; set: (data: Lookups) => void };
 
-const EMPTY: Lookups = { categories: [], wallets: [], lastWalletId: null, groups: [], dueBills: 0 };
+const EMPTY: Lookups = { categories: [], wallets: [], lastWalletId: null, groups: [], dueBills: 0, dueCommittees: 0, dueLoans: 0 };
 const LookupsContext = createContext<Ctx>({ ...EMPTY, ready: false, set: () => {} });
 
 /**

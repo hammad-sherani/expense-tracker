@@ -27,13 +27,15 @@ function WalletForm({ wallet, onDone }: { wallet?: WalletDTO; onDone: () => void
   const [type, setType] = useState<WalletTypeValue>(wallet?.type ?? "BANK");
   const [color, setColor] = useState(wallet?.color ?? WALLET_TYPE_META.BANK.color);
   const [opening, setOpening] = useState(wallet ? String(wallet.openingBalance) : "0");
+  const [limit, setLimit] = useState(wallet?.creditLimit ? String(wallet.creditLimit) : "");
+  const [dueDay, setDueDay] = useState(wallet?.dueDay ? String(wallet.dueDay) : "");
   const [errors, setErrors] = useState<Errors>({});
   const [isPending, startTransition] = useTransition();
   const clear = (k: string) => setErrors((e) => (e[k] ? { ...e, [k]: undefined } : e));
 
   const submit = () =>
     startTransition(async () => {
-      const values = { name, type, color, openingBalance: opening.trim() || "0" };
+      const values = { name, type, color, openingBalance: opening.trim() || "0", creditLimit: limit.trim(), dueDay: dueDay.trim() };
       const result = wallet ? await updateWallet(wallet.id, values) : await createWallet(values);
       if (!result.ok) {
         setErrors(Object.fromEntries(Object.entries(result.fieldErrors ?? {}).map(([k, v]) => [k, v?.[0]])));
@@ -133,6 +135,45 @@ function WalletForm({ wallet, onDone }: { wallet?: WalletDTO; onDone: () => void
             </FieldDescription>
           )}
         </Field>
+
+        {type === "CARD" && (
+          <div className="grid grid-cols-2 gap-3">
+            <Field data-invalid={Boolean(errors.creditLimit)}>
+              <FieldLabel htmlFor="wallet-limit">Credit limit</FieldLabel>
+              <Input
+                id="wallet-limit"
+                inputMode="decimal"
+                placeholder="Optional"
+                value={limit}
+                onChange={(e) => {
+                  setLimit(e.target.value.replace(/[^\d.]/g, "").slice(0, 13));
+                  clear("creditLimit");
+                }}
+                className="tabular-nums"
+                aria-invalid={Boolean(errors.creditLimit)}
+              />
+              {errors.creditLimit && <FieldError>{errors.creditLimit}</FieldError>}
+            </Field>
+            <Field data-invalid={Boolean(errors.dueDay)}>
+              <FieldLabel htmlFor="wallet-due-day">Bill due day</FieldLabel>
+              <Input
+                id="wallet-due-day"
+                inputMode="numeric"
+                placeholder="e.g. 5"
+                value={dueDay}
+                onChange={(e) => {
+                  setDueDay(e.target.value.replace(/\D/g, "").slice(0, 2));
+                  clear("dueDay");
+                }}
+                aria-invalid={Boolean(errors.dueDay)}
+              />
+              {errors.dueDay && <FieldError>{errors.dueDay}</FieldError>}
+            </Field>
+            <FieldDescription className="col-span-2">
+              Spending on the card makes its balance negative. Shown with your loans.
+            </FieldDescription>
+          </div>
+        )}
       </FieldGroup>
       <DialogFooter>
         <Button type="button" variant="ghost" onClick={onDone} disabled={isPending}>

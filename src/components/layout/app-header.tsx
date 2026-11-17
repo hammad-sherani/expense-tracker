@@ -43,7 +43,9 @@ export function AppHeader({ variant, userMenu }: { variant: NavVariant; userMenu
             <SheetTitle className="sr-only">Navigation</SheetTitle>
             <Brand href={home} subtitle={subtitle} />
           </SheetHeader>
-          <NavLinks variant={variant} className="p-3" onNavigate={() => setOpen(false)} />
+          <div data-testid="sheet-scroll" className="scrollbar-subtle min-h-0 flex-1 overflow-y-auto">
+            <NavLinks variant={variant} className="p-3" onNavigate={() => setOpen(false)} />
+          </div>
         </SheetContent>
       </Sheet>
       <div className="lg:hidden">

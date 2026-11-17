@@ -100,6 +100,7 @@ function toFormValues(expense?: ExpenseDTO, defaults?: Partial<ExpenseFormValues
     categoryId: expense?.category.id ?? "",
     walletId: expense?.wallet?.id ?? "",
     groupId: expense?.group?.id ?? "",
+    goalId: expense?.goal?.id ?? "",
     notes: expense?.notes ?? "",
     split: toSplitValues(expense),
     ...defaults,
@@ -112,6 +113,8 @@ type ExpenseFormProps = {
   defaults?: Partial<ExpenseFormValues>;
   /** Pays this recurring bill: links the expense and moves the bill to its next date. */
   recurringId?: string;
+  /** Name of the savings goal when this is paid from a fund. */
+  fundName?: string;
   onSuccess?: (expense: ExpenseDTO) => void;
   onCancel?: () => void;
   submitLabel?: string;
@@ -124,6 +127,7 @@ export function ExpenseForm({
   expense,
   defaults,
   recurringId,
+  fundName,
   onSuccess,
   onCancel,
   submitLabel,
@@ -143,6 +147,7 @@ export function ExpenseForm({
   const amount = useWatch({ control: form.control, name: "amount" });
   const splitEnabled = useWatch({ control: form.control, name: "split.enabled" });
   const groupId = useWatch({ control: form.control, name: "groupId" });
+  const fromFund = Boolean(useWatch({ control: form.control, name: "goalId" }));
   const lookups = useLookups();
   // Archived categories/wallets are hidden, except the one an edited expense already uses.
   const categories = lookups.categories.filter((c) => !c.archived || c.id === expense?.category.id);
@@ -154,10 +159,10 @@ export function ExpenseForm({
 
   // New expenses start in the most recently used wallet (lookups load after the first render).
   useEffect(() => {
-    if (!isEdit && lookups.ready && !form.getValues("walletId") && !form.formState.dirtyFields.walletId) {
+    if (!isEdit && !fromFund && lookups.ready && !form.getValues("walletId") && !form.formState.dirtyFields.walletId) {
       form.setValue("walletId", defaultWalletId);
     }
-  }, [isEdit, lookups.ready, defaultWalletId, form]);
+  }, [isEdit, fromFund, lookups.ready, defaultWalletId, form]);
 
   const onSubmit = form.handleSubmit((values) => {
     startTransition(async () => {
@@ -222,8 +227,14 @@ export function ExpenseForm({
           )}
         />
 
+        {fromFund && (
+          <p className="rounded-md bg-primary/10 px-3 py-2 text-sm">
+            Paid from your <span className="font-medium">{fundName ?? "savings"}</span> fund. Your wallets won&apos;t change.
+          </p>
+        )}
+
         {/* Split with friends */}
-        <Controller
+        {!fromFund && <Controller
           control={form.control}
           name="split"
           render={({ field, formState }) => {
@@ -248,7 +259,7 @@ export function ExpenseForm({
               />
             );
           }}
-        />
+        />}
 
         {/* Description */}
         <Controller
@@ -283,6 +294,7 @@ export function ExpenseForm({
                 </FieldLabel>
                 <Link
                   href="/settings/categories"
+                  onClick={onCancel}
                   className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                 >
                   <Settings2 className="size-3.5" />
@@ -390,7 +402,7 @@ export function ExpenseForm({
           />
 
           {/* Wallet */}
-          <Controller
+          {!fromFund && <Controller
             control={form.control}
             name="walletId"
             render={({ field, fieldState }) => (
@@ -421,7 +433,7 @@ export function ExpenseForm({
                 <FieldError errors={[fieldState.error]} />
               </Field>
             )}
-          />
+          />}
         </div>
 
         {/* Notes */}
