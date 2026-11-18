@@ -1,10 +1,11 @@
-import { Flag, HandCoins } from "lucide-react";
+import { Flag } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { PageHeaderSkeleton } from "@/components/dashboard/dashboard-skeleton";
-import { AddExpectedButton, AddGoalButton, ExpectedRow } from "@/components/goals/goal-ui";
+import { AddExpectedButton, AddGoalButton } from "@/components/goals/goal-ui";
+import { PaymentsSection } from "@/components/goals/payments-search";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card } from "@/components/ui/card";
@@ -99,38 +100,12 @@ async function Goals() {
           </div>
         )}
 
-        <section>
-          <h2 className="mb-3 text-sm font-medium text-muted-foreground">Project payments</h2>
-          <Card className="gap-0 py-0">
-            {expected.pending.length === 0 ? (
-              <EmptyState
-                icon={HandCoins}
-                title="No expected payments"
-                description="Add the project payments you're waiting for, so they count in your plan."
-                className="py-8"
-              />
-            ) : (
-              <ul className="divide-y" aria-label="Expected payments">
-                {expected.pending.map((p) => (
-                  <ExpectedRow key={p.id} payment={p} goals={options} />
-                ))}
-              </ul>
-            )}
-          </Card>
-        </section>
-
-        {expected.received.length > 0 && (
-          <section>
-            <h2 className="mb-3 text-sm font-medium text-muted-foreground">Recently received</h2>
-            <Card className="gap-0 py-0">
-              <ul className="divide-y" aria-label="Received payments">
-                {expected.received.map((p) => (
-                  <ExpectedRow key={p.id} payment={p} goals={options} />
-                ))}
-              </ul>
-            </Card>
-          </section>
-        )}
+        <PaymentsSection
+          pending={expected.pending}
+          recent={expected.received}
+          allReceived={expected.allReceived}
+          goals={options}
+        />
 
         {archived.length > 0 && (
           <section>

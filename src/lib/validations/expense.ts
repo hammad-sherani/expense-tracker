@@ -124,6 +124,8 @@ export function issuesToFieldErrors(error: z.ZodError) {
 export const expenseListParamsSchema = z.object({
   q: z.string().trim().max(100).catch(""),
   category: z.string().regex(OBJECT_ID_RE).optional().catch(undefined),
+  /** Categories to leave out (ignored when one category is chosen). */
+  exclude: z.array(z.string().regex(OBJECT_ID_RE)).max(100).catch([]),
   wallet: z.string().regex(OBJECT_ID_RE).optional().catch(undefined),
   sort: z
     .enum(Object.keys(SORT_OPTIONS) as [keyof typeof SORT_OPTIONS, ...(keyof typeof SORT_OPTIONS)[]])
@@ -141,6 +143,7 @@ export function parseExpenseListParams(sp: RawSearchParams): ExpenseListParams {
   return expenseListParamsSchema.parse({
     q: first(sp.q) ?? "",
     category: first(sp.category) || undefined,
+    exclude: [...new Set((first(sp.exclude) ?? "").split(",").filter(Boolean))],
     wallet: first(sp.wallet) || undefined,
     sort: first(sp.sort) ?? "date-desc",
     page: first(sp.page) ?? 1,

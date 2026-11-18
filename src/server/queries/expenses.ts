@@ -98,12 +98,17 @@ function escapeRegex(value: string) {
 function listWhere(
   userId: string,
   period: Period,
-  params: Pick<ExpenseListParams, "q" | "category" | "wallet">,
+  params: Pick<ExpenseListParams, "q" | "category" | "exclude" | "wallet">,
 ): Prisma.ExpenseWhereInput {
+  // Old expenses with no category stay in when some categories are left out.
+  const leaveOut: Prisma.ExpenseWhereInput =
+    !params.category && params.exclude.length
+      ? { OR: [{ categoryId: { notIn: params.exclude } }, { categoryId: null }, { categoryId: { isSet: false } }] }
+      : {};
   return {
     userId,
     ...periodWhere(period),
-    ...(params.category ? { categoryId: params.category } : {}),
+    ...(params.category ? { categoryId: params.category } : leaveOut),
     ...(params.wallet ? { walletId: params.wallet } : {}),
     // Prisma's MongoDB connector turns `contains` into a $regex without escaping,
     // so escape the user's text to search for it literally.

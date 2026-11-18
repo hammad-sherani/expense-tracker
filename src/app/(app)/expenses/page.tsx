@@ -56,9 +56,13 @@ async function Expenses({ searchParams }: { searchParams: PageProps<"/expenses">
     listWallets(user.id, false),
   ]);
   const label = periodLabel(period);
-  const isFiltered = Boolean(params.q || params.category || params.wallet);
+  // A chosen category wins over a list of left-out ones.
+  const exclude = params.category ? [] : params.exclude;
+  const isFiltered = Boolean(params.q || params.category || exclude.length || params.wallet);
+  const excludedNames = categories.filter((c) => exclude.includes(c.id)).map((c) => c.name);
   const filterNames = [
     categories.find((c) => c.id === params.category)?.name,
+    excludedNames.length ? `without ${excludedNames.join(", ")}` : null,
     wallets.find((w) => w.id === params.wallet)?.name,
   ].filter(Boolean);
 
@@ -75,6 +79,7 @@ async function Expenses({ searchParams }: { searchParams: PageProps<"/expenses">
                 period: periodParam,
                 q: params.q,
                 category: params.category,
+                exclude: exclude.join(",") || undefined,
                 wallet: params.wallet,
                 sort: params.sort,
               }}
@@ -103,7 +108,7 @@ async function Expenses({ searchParams }: { searchParams: PageProps<"/expenses">
             )}
             sub={
               isFiltered
-                ? `${result.total} result${result.total === 1 ? "" : "s"}${filterNames.length ? ` in ${filterNames.join(" · ")}` : ""}`
+                ? `${result.total} result${result.total === 1 ? "" : "s"}${filterNames.length ? ` · ${filterNames.join(" · ")}` : ""}`
                 : "per transaction"
             }
           />
@@ -121,6 +126,7 @@ async function Expenses({ searchParams }: { searchParams: PageProps<"/expenses">
         <ExpenseFilters
           q={params.q}
           category={params.category}
+          exclude={exclude}
           wallet={params.wallet}
           sort={params.sort}
           categories={categories}

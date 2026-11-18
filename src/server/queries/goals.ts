@@ -117,9 +117,12 @@ export async function listExpected(userId: string, goalId?: string) {
     overdue: !p.receivedAt && p.expectedDate < today,
     notes: p.notes,
   }));
+  const allReceived = all.filter((p) => p.received).sort((a, b) => b.receivedAt!.localeCompare(a.receivedAt!));
   return {
     pending: all.filter((p) => !p.received),
-    received: all.filter((p) => p.received).sort((a, b) => b.receivedAt!.localeCompare(a.receivedAt!)).slice(0, 10),
+    received: allReceived.slice(0, 10),
+    /** Every received payment, newest first (for search). */
+    allReceived,
   };
 }
 

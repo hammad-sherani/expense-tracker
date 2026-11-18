@@ -1,11 +1,13 @@
 "use client";
 
-import { Search, X } from "lucide-react";
+import { ChevronDown, Search, X } from "lucide-react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useNavigationTransition } from "@/components/shared/navigation-transition";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { categoryIcon } from "@/lib/category-icons";
 import { DEFAULT_SORT, SORT_OPTIONS } from "@/lib/constants";
@@ -13,9 +15,106 @@ import type { CategoryDTO, WalletDTO } from "@/types";
 
 const ALL = "__all__";
 
+/**
+ * Tick the categories to show. Untick one or two to see everything else; "Only" shows just one.
+ * Saved in the URL as `category` (just one) or `exclude` (the unticked ones).
+ */
+function CategoryFilter({
+  categories,
+  category,
+  exclude,
+  onChange,
+}: {
+  categories: CategoryDTO[];
+  category?: string;
+  exclude: string[];
+  onChange: (next: { category?: string; exclude?: string[] }) => void;
+}) {
+  const shown = (id: string) => (category ? id === category : !exclude.includes(id));
+  const shownCount = categories.filter((c) => shown(c.id)).length;
+
+  const apply = (ids: Set<string>) => {
+    if (ids.size === 0) return; // keep at least one
+    if (ids.size === categories.length) onChange({});
+    else if (ids.size === 1) onChange({ category: [...ids][0] });
+    else onChange({ exclude: categories.filter((c) => !ids.has(c.id)).map((c) => c.id) });
+  };
+  const toggle = (id: string) => {
+    const ids = new Set(categories.filter((c) => shown(c.id)).map((c) => c.id));
+    if (ids.has(id)) ids.delete(id);
+    else ids.add(id);
+    apply(ids);
+  };
+
+  const hidden = categories.filter((c) => !shown(c.id));
+  const label = category
+    ? (categories.find((c) => c.id === category)?.name ?? "1 category")
+    : hidden.length === 0
+      ? "All categories"
+      : hidden.length === 1
+        ? `Without ${hidden[0].name}`
+        : `Without ${hidden.length} categories`;
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          className="w-full justify-between font-normal md:w-48"
+          aria-label={`Filter by category: ${label}`}
+        >
+          <span className="truncate">{label}</span>
+          <ChevronDown className="opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 p-0">
+        <div className="flex items-center justify-between border-b px-3 py-2">
+          <p className="text-xs text-muted-foreground">Untick what you don&apos;t want to see</p>
+          {shownCount < categories.length && (
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => onChange({})}>
+              Show all
+            </Button>
+          )}
+        </div>
+        <ul className="max-h-72 overflow-y-auto py-1" aria-label="Categories">
+          {categories.map((c) => {
+            const Icon = categoryIcon(c.icon);
+            const checked = shown(c.id);
+            const last = checked && shownCount === 1;
+            return (
+              <li key={c.id} className="group flex items-center gap-2 px-3 py-1.5 hover:bg-muted/60">
+                <Checkbox
+                  id={`cat-filter-${c.id}`}
+                  checked={checked}
+                  disabled={last}
+                  onCheckedChange={() => toggle(c.id)}
+                />
+                <label htmlFor={`cat-filter-${c.id}`} className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-sm">
+                  <Icon className="size-4 shrink-0" style={{ color: c.color }} />
+                  <span className="truncate">{c.name}</span>
+                  {c.archived && <span className="text-xs text-muted-foreground">(archived)</span>}
+                </label>
+                <button
+                  type="button"
+                  className="rounded px-1.5 text-xs text-muted-foreground hover:text-foreground focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                  aria-label={`Show only ${c.name}`}
+                  onClick={() => onChange({ category: c.id })}
+                >
+                  Only
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function ExpenseFilters({
   q,
   category,
+  exclude = [],
   wallet,
   sort,
   categories,
@@ -23,6 +122,8 @@ export function ExpenseFilters({
 }: {
   q: string;
   category?: string;
+  /** Categories left out of the list. */
+  exclude?: string[];
   wallet?: string;
   sort: string;
   categories: CategoryDTO[];
@@ -65,8 +166,7 @@ export function ExpenseFilters({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
-  const hasFilters = Boolean(q || category || wallet || sort !== DEFAULT_SORT);
-  const selectedCategory = categories.find((c) => c.id === category);
+  const hasFilters = Boolean(q || category || exclude.length || wallet || sort !== DEFAULT_SORT);
   const selectedWallet = wallets.find((w) => w.id === wallet);
 
   return (
@@ -93,24 +193,12 @@ export function ExpenseFilters({
         )}
       </div>
       <div className="grid grid-cols-2 gap-2 md:flex">
-        <Select value={category ?? ALL} onValueChange={(v) => update({ category: v === ALL ? undefined : v })}>
-          <SelectTrigger className="w-full md:w-44" aria-label="Filter by category">
-            <SelectValue>{selectedCategory?.name ?? "All categories"}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All categories</SelectItem>
-            {categories.map((c) => {
-              const Icon = categoryIcon(c.icon);
-              return (
-                <SelectItem key={c.id} value={c.id}>
-                  <Icon style={{ color: c.color }} />
-                  {c.name}
-                  {c.archived && <span className="text-xs text-muted-foreground">(archived)</span>}
-                </SelectItem>
-              );
-            })}
-          </SelectContent>
-        </Select>
+        <CategoryFilter
+          categories={categories}
+          category={category}
+          exclude={exclude}
+          onChange={(next) => update({ category: next.category, exclude: next.exclude?.join(",") || undefined })}
+        />
         <Select value={wallet ?? ALL} onValueChange={(v) => update({ wallet: v === ALL ? undefined : v })}>
           <SelectTrigger className="w-full md:w-40" aria-label="Filter by wallet">
             <SelectValue>{selectedWallet?.name ?? "All wallets"}</SelectValue>
@@ -144,7 +232,7 @@ export function ExpenseFilters({
           onClick={() => {
             lastPushed.current = "";
             setSearch("");
-            update({ q: undefined, category: undefined, wallet: undefined, sort: undefined });
+            update({ q: undefined, category: undefined, exclude: undefined, wallet: undefined, sort: undefined });
           }}
         >
           <X />
